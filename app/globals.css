@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* --nav-height is the TOTAL fixed-chrome height (promo ticker + nav bar) --
+     every page uses it to offset content below the fixed header. GlobalNav
+     itself uses --nav-bar-height (its own literal height) and sits at
+     top: var(--promo-height), stacked under the ticker. */
+  --promo-height: 32px;
+  --nav-bar-height: 76px;
+  --nav-height: calc(var(--promo-height) + var(--nav-bar-height));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-ink text-paper antialiased;
+  font-feature-settings: "ss01" 1, "ss02" 1;
+  background-image:
+    radial-gradient(1200px 640px at 12% -8%, rgba(201, 162, 39, 0.10), transparent 52%),
+    radial-gradient(900px 520px at 100% 0%, rgba(70, 110, 150, 0.16), transparent 48%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: #f3eee3;
+  color: #0f0d0b;
+}
+
+/* Technical hairline -- used instead of shadows/rounded borders to add
+   structure. Thin, precise, never soft. */
+.hairline {
+  @apply border border-ink-800;
+}
+.hairline-t {
+  @apply border-t border-ink-800;
+}
+.hairline-b {
+  @apply border-b border-ink-800;
+}
+
+/* Concrete-panel surface: a flat dark block with a faint grain overlay,
+   standing in for photography where none exists yet. Deliberately reads as
+   a textured surface, not a fake photo. */
+.concrete-panel {
+  position: relative;
+  background:
+    radial-gradient(120% 140% at 15% 0%, #243044 0%, #141c28 55%, #0A1016 100%);
+  overflow: hidden;
+}
+.concrete-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: theme("backgroundImage.grain");
+  background-size: 160px 160px;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.grain-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: theme("backgroundImage.grain");
+  background-size: 160px 160px;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* Numbered step / label treatment used across the product instead of
+   generic stepper circles or pill badges. */
+.tag-number {
+  @apply font-sans text-xs font-semibold tracking-widest text-ink-200;
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  @apply font-sans text-xs font-semibold uppercase tracking-widest text-ink-200;
+}
+
+/* --- Arabic / RTL --------------------------------------------------------
+   Swapping these two variables (rather than editing every component's
+   font-display/font-sans class) re-fonts the whole site to Cairo the moment
+   dir="rtl" is set on <html>. Letter-spacing and uppercase are Latin
+   typographic conventions with no Arabic equivalent (Arabic has no case,
+   and wide tracking breaks letter joining), so both are neutralized under
+   RTL globally instead of stripping those classes from every component. */
+[dir="rtl"] {
+  --font-display: var(--font-ar);
+  --font-interface: var(--font-ar);
+}
+[dir="rtl"] .tracking-widest,
+[dir="rtl"] .tracking-wide,
+[dir="rtl"] .tracking-tightest,
+[dir="rtl"] .tracking-tight {
+  letter-spacing: normal;
+}
+[dir="rtl"] .uppercase {
+  text-transform: none;
+}
+
+/* --- Arcade accents -------------------------------------------------------
+   Shared, opt-in utilities for the "literal game element" pass -- kept as
+   small building blocks used on a few key spots (hero CTA, Tamara badge,
+   rewards strip) rather than rewritten into every component, so the
+   existing concrete/chrome identity stays the base layer and this reads as
+   an accent on top of it, not a redesign. */
+.pixel-corners {
+  clip-path: polygon(
+    0 6px, 6px 6px, 6px 0,
+    calc(100% - 6px) 0, calc(100% - 6px) 6px, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 6px) calc(100% - 6px), calc(100% - 6px) 100%,
+    6px 100%, 6px calc(100% - 6px), 0 calc(100% - 6px)
+  );
+}
+
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(242, 242, 238, 0.06) 0px,
+    rgba(242, 242, 238, 0.06) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+@keyframes chomp {
+  0%, 100% { clip-path: polygon(100% 0, 0 50%, 100% 100%); }
+  50% { clip-path: polygon(100% 20%, 0 50%, 100% 80%); }
+}
+.chomper {
+  animation: chomp 0.7s steps(2) infinite;
+}
+
+/* Header promo ticker: a slim, always-visible strip above the nav so current
+   offers (Tamara, rewards, the student package) are seen immediately instead
+   of only surfacing near the bottom of the homepage. Plain CSS scroll, no JS
+   timer -- the track is the offer list doubled, scrolled exactly half its
+   own width for a seamless loop. */
+.promo-track {
+  width: max-content;
+  animation: promo-scroll 24s linear infinite;
+}
+@keyframes promo-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+[dir="rtl"] .promo-track {
+  animation-direction: reverse;
+}
+@media (prefers-reduced-motion: reduce) {
+  .promo-track {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* Utility scrollbar hide for horizontal date/time strips */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
