@@ -13,6 +13,7 @@ import { FIRST_AVAILABLE } from "@/components/book/BarberStep";
 import { isTamaraEligible, tamaraChargeTotal } from "@/lib/payments/tamaraEligibility";
 import { TamaraInstallmentWidget } from "@/components/ui/TamaraInstallmentWidget";
 import { toE164Saudi } from "@/lib/phone";
+import { isValidEmail } from "@/lib/email";
 import {
   FALLBACK_HOURS,
   formatSlotLabel,
@@ -87,6 +88,7 @@ export function BookingFlow({
   const [date, setDate] = useState(todayDateString());
   const [time, setTime] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [hours, setHours] = useState<BusinessHours>(FALLBACK_HOURS);
@@ -116,6 +118,7 @@ export function BookingFlow({
       const user = userData?.user ?? null;
       if (user) {
         setCustomerId(user.id);
+        setEmail(user.email ?? "");
         const { data: profile } = await supabase
           .from("profiles")
           .select("full_name, phone")
@@ -252,14 +255,23 @@ export function BookingFlow({
   async function submit(atTime?: string) {
     const bookingTime = atTime ?? time;
     setSubmitError(null);
-    if (!customerId && !phone) {
-      setSubmitError("Enter your number to lock it in.");
-      return;
+    // Signed-in customers already have both on file. A guest has to give
+    // both here -- phone to identify the booking itself, email because
+    // that's what lets this visit be matched to their account (and its
+    // reward points) the moment they sign in, even if that's after this
+    // booking is made.
+    if (!customerId) {
+      if (!phone) {
+        setSubmitError("Enter your number to lock it in.");
+        return;
+      }
+      if (!email || !isValidEmail(email)) {
+        setSubmitError("Enter a valid email so your visit counts toward your rewards.");
+        return;
+      }
     }
     if (noShowCount >= 2) {
-      setSubmitError(
-        BOOKING_ERROR_MESSAGES.CUSTOMER_BLOCKED_NO_SHOW ?? "Online booking is unavailable for this account after two missed appointments — call the shop to book.",
-      );
+      setSubmitError(BOOKING_ERROR_MESSAGES.CUSTOMER_BLOCKED_NO_SHOW!);
       setStage("phone");
       return;
     }
@@ -291,7 +303,7 @@ export function BookingFlow({
         // never null.
         p_customer_name: name || phone || "Guest",
         p_customer_phone: normalizedPhone || null,
-        p_customer_email: null,
+        p_customer_email: email.trim() || null,
         p_notes: selectedServices.length > 1 ? "Combined booking" : null,
         p_customer_package_id: usePackageRedemption && packageEligible ? activePackage!.id : null,
       });
@@ -508,9 +520,9 @@ export function BookingFlow({
         />
       )}
 
-      {/* 04 -- PHONE (skipped entirely for signed-in customers) */}
+      {/* 04 -- PHONE + EMAIL (skipped entirely for signed-in customers) */}
       {stage === "phone" && (
-        <FlowStep index="04" label="YOUR NUMBER">
+        <FlowStep index="04" label="YOUR DETAILS">
           <input
             type="tel"
             autoFocus
@@ -518,6 +530,13 @@ export function BookingFlow({
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+966 5X XXX XXXX"
             className="hairline w-full bg-transparent px-6 py-5 font-display text-2xl tracking-wide text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email (for your rewards)"
+            className="hairline mt-3 w-full bg-transparent px-6 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
           />
           <input
             type="text"

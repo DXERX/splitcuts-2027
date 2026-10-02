@@ -23,7 +23,16 @@ export function Location() {
             </div>
             <div>
               <p className="tag-number text-ink-600">CONTACT</p>
-              <p className="mt-2 font-sans text-paper">+966 5X XXX XXXX</p>
+              <p className="mt-2 font-sans text-paper">
+                <a href="tel:+966541248498" className="hover:text-ink-300">
+                  +966 54 124 8498
+                </a>
+              </p>
+              <p className="mt-1 font-sans text-paper">
+                <a href="mailto:ceo@splittech.sa" className="hover:text-ink-300">
+                  ceo@splittech.sa
+                </a>
+              </p>
             </div>
           </div>
           <div className="mt-8 flex flex-wrap gap-4">
