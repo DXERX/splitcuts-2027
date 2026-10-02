@@ -257,7 +257,9 @@ export function BookingFlow({
       return;
     }
     if (noShowCount >= 2) {
-      setSubmitError(BOOKING_ERROR_MESSAGES.CUSTOMER_BLOCKED_NO_SHOW);
+      setSubmitError(
+        BOOKING_ERROR_MESSAGES.CUSTOMER_BLOCKED_NO_SHOW ?? "Online booking is unavailable for this account after two missed appointments — call the shop to book.",
+      );
       setStage("phone");
       return;
     }

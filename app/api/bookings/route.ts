@@ -1,9 +1,6 @@
 // app/api/bookings/route.ts
-// Example Route Handler wrapping public.create_booking(). Useful for
-// server-to-server callers (a future public API, a partner integration)
-// that shouldn't talk to Supabase directly. Browser clients can call the
-// RPC straight from lib/supabase/client.ts — this route adds no extra
-// security since the RPC itself already enforces everything through RLS.
+// Server-side entry point for creating an appointment through the same RPC
+// used by the booking flow. Times are branch-local, matching the live schema.
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
@@ -11,8 +8,13 @@ import { createClient } from "@/lib/supabase/server";
 const bodySchema = z.object({
   barberId: z.string().uuid(),
   serviceId: z.string().uuid(),
-  startsAt: z.string().datetime(),
+  appointmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  appointmentTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  customerName: z.string().max(200).optional(),
+  customerPhone: z.string().max(50).optional(),
+  customerEmail: z.string().email().optional(),
   notes: z.string().max(500).optional(),
+  customerPackageId: z.string().uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -30,20 +32,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "INVALID_BODY", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { barberId, serviceId, startsAt, notes } = parsed.data;
+  const {
+    barberId,
+    serviceId,
+    appointmentDate,
+    appointmentTime,
+    customerName,
+    customerPhone,
+    customerEmail,
+    notes,
+    customerPackageId,
+  } = parsed.data;
 
-  const { data, error } = await supabase.rpc("create_booking", {
+  const { data, error } = await supabase.rpc("create_appointment", {
     p_customer_id: user.id,
     p_barber_id: barberId,
     p_service_id: serviceId,
-    p_starts_at: startsAt,
+    p_appointment_date: appointmentDate,
+    p_appointment_time: appointmentTime,
+    p_customer_name: customerName ?? null,
+    p_customer_phone: customerPhone ?? null,
+    p_customer_email: customerEmail ?? null,
     p_notes: notes ?? null,
+    p_customer_package_id: customerPackageId ?? null,
   });
 
   if (error) {
-    // error.message carries the RPC's errcode P0001 label, e.g. SLOT_ALREADY_BOOKED
+    // The RPC returns validation failures such as SLOT_ALREADY_BOOKED.
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 
-  return NextResponse.json({ booking: data }, { status: 201 });
+  return NextResponse.json({ appointment: data }, { status: 201 });
 }
