@@ -2,6 +2,7 @@ import { Container } from "@/components/ui/Container";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Reveal } from "@/components/ui/Reveal";
 import { LinkButton } from "@/components/ui/Button";
+import { SHOP_PHONE_DISPLAY, SHOP_PHONE_TEL, SHOP_EMAIL, SHOP_LOCATION_URL } from "@/lib/shopInfo";
 
 export function Location() {
   return (
@@ -24,13 +25,13 @@ export function Location() {
             <div>
               <p className="tag-number text-ink-600">CONTACT</p>
               <p className="mt-2 font-sans text-paper">
-                <a href="tel:+966541248498" className="hover:text-ink-300">
-                  +966 54 124 8498
+                <a href={`tel:${SHOP_PHONE_TEL}`} className="hover:text-ink-300">
+                  {SHOP_PHONE_DISPLAY}
                 </a>
               </p>
               <p className="mt-1 font-sans text-paper">
-                <a href="mailto:ceo@splittech.sa" className="hover:text-ink-300">
-                  ceo@splittech.sa
+                <a href={`mailto:${SHOP_EMAIL}`} className="hover:text-ink-300">
+                  {SHOP_EMAIL}
                 </a>
               </p>
             </div>
@@ -40,7 +41,7 @@ export function Location() {
               BOOK YOUR CHAIR
             </LinkButton>
             <LinkButton
-              href="https://maps.app.goo.gl/i7tVN1uw8ZLwkyGu6"
+              href={SHOP_LOCATION_URL}
               variant="secondary"
               size="lg"
               target="_blank"

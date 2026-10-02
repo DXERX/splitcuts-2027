@@ -344,6 +344,20 @@ export function BookingFlow({
     setBookingId(createdIds[0] ?? crypto.randomUUID());
     setCreatedAppointmentIds(createdIds);
     setStage("success");
+
+    // Fire-and-forget: the booking itself is already locked in above, so a
+    // slow or failed email must never hold up or fail the success screen.
+    // Only the first leg of a combined booking gets one -- they're
+    // back-to-back on the same visit, so one email covering the start time
+    // and barber is all that's useful here.
+    const firstId = createdIds[0];
+    if (firstId) {
+      void fetch("/api/bookings/send-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointmentId: firstId }),
+      }).catch(() => {});
+    }
   }
 
   if (stage === "success" && selectedServices.length > 0) {

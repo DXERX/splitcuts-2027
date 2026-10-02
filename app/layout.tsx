@@ -28,10 +28,50 @@ const arabic = Cairo({
   display: "swap",
 });
 
+// Falls back to a placeholder host when NEXT_PUBLIC_SITE_URL isn't set
+// (local/sandbox builds) -- metadataBase just needs to be some valid
+// absolute URL for Next to resolve the relative OG image path against;
+// what actually reaches WhatsApp/Discord link previews in production is
+// whatever NEXT_PUBLIC_SITE_URL is set to in Vercel's env vars.
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://splitcuts.vercel.app";
+
+const SITE_TITLE = "Split Cuts";
+const SITE_DESCRIPTION = "Cuts. Braids. Twists. Dreads. Built for Jeddah. Book your chair in seconds.";
+
 export const metadata: Metadata = {
-  title: "Split Cuts",
-  description: "Cuts. Braids. Twists. Dreads. Built for Jeddah. Book your chair in seconds.",
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  metadataBase: new URL(siteUrl),
+  // This is the banner WhatsApp/Discord/iMessage/etc. show under the link
+  // whenever someone shares the site -- not anything shown on the site
+  // itself. Every page inherits this unless it sets its own.
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/",
+    siteName: SITE_TITLE,
+    images: [{ url: "/og/split-cuts-og.jpg", width: 1600, height: 525 }],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: ["/og/split-cuts-og.jpg"],
+  },
 };
+
+// Every page in this app reads live, per-request state (signed-in user,
+// live appointments, realtime boards) -- nothing here is meaningfully
+// static. Without this, Next tries to statically prerender pages at BUILD
+// time, which runs lib/supabase/client.ts's createClient() on the server
+// with no request context; if the deploy's env vars aren't present at
+// build time for any reason, that throws ("Your project's URL and API key
+// are required...") and fails the whole build rather than just that page
+// at request time. Forcing every route dynamic here means a build never
+// fails over this, and it matches what this app actually is.
+export const dynamic = "force-dynamic";
 
 // Runs before hydration/paint so a returning visitor who picked Arabic never
 // sees an English-LTR flash. Kept tiny and defensive (try/catch) since it
