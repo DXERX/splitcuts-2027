@@ -24,17 +24,21 @@ const config: Config = {
       // repaints -- nothing else needed to change.
       colors: {
         ink: {
-          DEFAULT: "#0A1016",
-          950: "#101820",
-          900: "#18222E",
-          800: "#2A3644",
-          600: "#5C6B7A",
-          400: "#8E9AAB",
-          300: "#A8B4C2",
-          200: "#C9D2DC",
+          // Warm concrete/stone, not cool slate -- Ahmed's explicit call
+          // ("خرساني دافئ، مو أسود نقي"): keep the dark editorial base, warm
+          // every shade instead of a cool blue-gray. Restored here after a
+          // later pass reverted it back to cool tones; don't re-cool these.
+          DEFAULT: "#0F0D0B",
+          950: "#17130F",
+          900: "#241E17",
+          800: "#362D24",
+          600: "#55483A",
+          400: "#8A7864",
+          300: "#AC9D89",
+          200: "#C9BEB0",
         },
         paper: {
-          DEFAULT: "#F2EEE6",
+          DEFAULT: "#F3EEE3",
           white: "#FFFFFF",
         },
         chrome: {

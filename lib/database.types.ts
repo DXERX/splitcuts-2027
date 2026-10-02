@@ -157,6 +157,9 @@ export interface Database {
           // Which package redemption (if any) paid for this visit -- added by
           // migration 0013. Null for every ordinary paid-at-checkout booking.
           customer_package_id: string | null;
+          // Set once the booking-confirmation email has gone out (migration
+          // 0017) -- null until then, makes the send route idempotent.
+          confirmation_email_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };

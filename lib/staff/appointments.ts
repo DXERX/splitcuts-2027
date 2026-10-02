@@ -54,7 +54,7 @@ export function mergeLiveAppointment(
   barbers: Barber[],
   services: Service[],
 ): LiveAppointment[] {
-  const [hydrated] = hydrateAppointments([incoming], barbers, services);
+  const hydrated = hydrateAppointments([incoming], barbers, services)[0];
   if (!hydrated) return prev;
   const exists = prev.some((a) => a.id === incoming.id);
   if (exists) {

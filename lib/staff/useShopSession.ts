@@ -9,6 +9,7 @@ import {
   type BusinessHours,
 } from "@/lib/timeSlots";
 import type { AppRole } from "@/lib/roles";
+import { getStaffBranchIds } from "@/lib/staffBranch";
 import {
   hydrateAppointments,
   mergeLiveAppointment,
@@ -92,10 +93,15 @@ export function useShopSession() {
       setRole((profile?.role as AppRole | undefined) ?? null);
       setBranches(branchRows ?? []);
 
+      // staff_roles (or profiles.branch_id for owner/manager/cashier) is
+      // what RLS itself checks (is_branch_staff(), migration 0004) -- only
+      // ever resolve to a branch this user is actually entitled to. An
+      // owner bypasses branch scoping entirely (is_owner()), so for them
+      // alone it's fine to default to the first active branch purely as
+      // this board's starting view.
+      const myBranchIds = await getStaffBranchIds(supabase, user.id);
       const resolvedBranch =
-        profile?.branch_id ??
-        branchRows?.[0]?.id ??
-        null;
+        myBranchIds[0] ?? (profile?.role === "owner" ? (branchRows?.[0]?.id ?? null) : null);
       setBranchId(resolvedBranch);
 
       let barberQuery = supabase.from("barbers").select("*").eq("is_active", true).order("name");
