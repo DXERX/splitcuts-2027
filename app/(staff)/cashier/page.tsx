@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import clsx from "clsx";
 import {
   AnimatePresence,
@@ -36,42 +35,6 @@ interface PendingPackageRequest {
   package_name: string | null;
 }
 
-/**
- * Restore the cashier's exact position after
- * each automatic full-page refresh.
- */
-useEffect(() => {
-  const saved =
-    window.sessionStorage.getItem(
-      CASHIER_SCROLL_POSITION_KEY,
-    );
-
-  if (!saved) {
-    return;
-  }
-
-  const y = Number(saved);
-
-  if (!Number.isFinite(y)) {
-    window.sessionStorage.removeItem(
-      CASHIER_SCROLL_POSITION_KEY,
-    );
-    return;
-  }
-
-  const frame = window.requestAnimationFrame(() => {
-    window.scrollTo({
-      top: y,
-      left: 0,
-      behavior: "auto",
-    });
-  });
-
-  return () => {
-    window.cancelAnimationFrame(frame);
-  };
-}, []);
-
 const PAGE_RELOAD_INTERVAL_MS = 10_000;
 
 const AUDIO_ENABLED_KEY =
@@ -80,7 +43,7 @@ const AUDIO_ENABLED_KEY =
 const CASHIER_BOOKING_IDS_KEY =
   "splitcuts_cashier_booking_ids";
 
-  const CASHIER_SCROLL_POSITION_KEY =
+const CASHIER_SCROLL_POSITION_KEY =
   "splitcuts_cashier_scroll_position";
 
 function useClock() {
@@ -133,6 +96,85 @@ export default function CashierShopModePage() {
 
   const bookingComparisonDone =
     useRef(false);
+
+  const scrollRestored =
+    useRef(false);
+
+  /**
+   * Restore the cashier's exact scroll position after
+   * shop data has finished loading.
+   *
+   * This hook MUST remain inside CashierShopModePage.
+   */
+  useEffect(() => {
+    if (
+      shop.loading ||
+      scrollRestored.current
+    ) {
+      return;
+    }
+
+    scrollRestored.current = true;
+
+    const saved =
+      window.sessionStorage.getItem(
+        CASHIER_SCROLL_POSITION_KEY,
+      );
+
+    if (!saved) {
+      return;
+    }
+
+    const y = Number(saved);
+
+    if (!Number.isFinite(y)) {
+      window.sessionStorage.removeItem(
+        CASHIER_SCROLL_POSITION_KEY,
+      );
+
+      return;
+    }
+
+    if (
+      "scrollRestoration" in
+      window.history
+    ) {
+      window.history.scrollRestoration =
+        "manual";
+    }
+
+    let frame2 = 0;
+
+    const frame1 =
+      window.requestAnimationFrame(() => {
+        frame2 =
+          window.requestAnimationFrame(
+            () => {
+              window.scrollTo({
+                top: y,
+                left: 0,
+                behavior: "auto",
+              });
+
+              window.sessionStorage.removeItem(
+                CASHIER_SCROLL_POSITION_KEY,
+              );
+            },
+          );
+      });
+
+    return () => {
+      window.cancelAnimationFrame(
+        frame1,
+      );
+
+      if (frame2) {
+        window.cancelAnimationFrame(
+          frame2,
+        );
+      }
+    };
+  }, [shop.loading]);
 
   /**
    * Remember whether this device had audio enabled.
@@ -206,38 +248,40 @@ export default function CashierShopModePage() {
           );
 
         if (newBookings.length > 0) {
-  const newest =
-    newBookings[newBookings.length - 1];
+          const newest =
+            newBookings[
+              newBookings.length - 1
+            ];
 
-  if (!newest) {
-    return;
-  }
+          if (!newest) {
+            return;
+          }
 
-  setFeedId(newest.id);
+          setFeedId(newest.id);
 
-  if (audioEnabled) {
-    shopAudio.playChime();
+          if (audioEnabled) {
+            shopAudio.playChime();
 
-    window.setTimeout(() => {
-      shopAudio.playChime();
-    }, 350);
+            window.setTimeout(() => {
+              shopAudio.playChime();
+            }, 350);
 
-    window.setTimeout(() => {
-      shopAudio.playChime();
-    }, 700);
+            window.setTimeout(() => {
+              shopAudio.playChime();
+            }, 700);
 
-    window.setTimeout(() => {
-      shopAudio.announce(
-        "New booking",
-        formatSlotLabel(
-          slotTime(
-            newest.appointment_time,
-          ),
-        ),
-      );
-    }, 1050);
-  }
-}
+            window.setTimeout(() => {
+              shopAudio.announce(
+                "New booking",
+                formatSlotLabel(
+                  slotTime(
+                    newest.appointment_time,
+                  ),
+                ),
+              );
+            }, 1050);
+          }
+        }
       } catch (error) {
         console.warn(
           "[cashier] could not parse stored booking IDs:",
@@ -286,16 +330,19 @@ export default function CashierShopModePage() {
 
   /**
    * Guaranteed full browser reload every 10 seconds.
+   *
+   * Save scroll position immediately before reload so
+   * the next page instance can restore it.
    */
   useEffect(() => {
     const reloadInterval =
       window.setInterval(() => {
         window.sessionStorage.setItem(
-  CASHIER_SCROLL_POSITION_KEY,
-  String(window.scrollY),
-);
+          CASHIER_SCROLL_POSITION_KEY,
+          String(window.scrollY),
+        );
 
-window.location.reload();
+        window.location.reload();
       }, PAGE_RELOAD_INTERVAL_MS);
 
     return () => {
@@ -305,6 +352,10 @@ window.location.reload();
     };
   }, []);
 
+  /**
+   * Load pending package payment requests for
+   * the currently selected branch.
+   */
   useEffect(() => {
     if (!shop.branchId) {
       return;
