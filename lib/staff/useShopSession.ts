@@ -1,15 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import { createClient } from "@/lib/supabase/client";
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
+
 import {
   FALLBACK_HOURS,
   businessDateString,
   type BusinessHours,
 } from "@/lib/timeSlots";
+
 import type { AppRole } from "@/lib/roles";
 import { getStaffBranchIds } from "@/lib/staffBranch";
+
 import {
   hydrateAppointments,
   mergeLiveAppointment,
@@ -17,34 +26,62 @@ import {
   type LiveAppointment,
   type Service,
 } from "@/lib/staff/appointments";
+
 import type { Database } from "@/lib/database.types";
 
-type Branch = Database["public"]["Tables"]["branches"]["Row"];
+type Branch =
+  Database["public"]["Tables"]["branches"]["Row"];
 
 const BOARD_REFRESH_INTERVAL_MS = 10_000;
 
 export function useShopSession() {
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(
+    () => createClient(),
+    [],
+  );
 
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [branchId, setBranchId] = useState<string | null>(null);
+  const [role, setRole] =
+    useState<AppRole | null>(null);
+
+  const [branchId, setBranchId] =
+    useState<string | null>(null);
+
   const [branches, setBranches] = useState<
     Pick<Branch, "id" | "name">[]
   >([]);
-  const [hours, setHours] = useState<BusinessHours>(FALLBACK_HOURS);
-  const [barbers, setBarbers] = useState<Barber[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [appointments, setAppointments] = useState<LiveAppointment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const businessDate = businessDateString(hours);
+  const [hours, setHours] =
+    useState<BusinessHours>(FALLBACK_HOURS);
+
+  const [barbers, setBarbers] =
+    useState<Barber[]>([]);
+
+  const [services, setServices] =
+    useState<Service[]>([]);
+
+  const [appointments, setAppointments] =
+    useState<LiveAppointment[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const businessDate =
+    businessDateString(hours);
 
   /**
-   * Loads the latest appointment board directly from Supabase.
+   * Load the authoritative appointment board
+   * directly from Supabase.
    *
-   * Realtime is still the primary instant-update mechanism.
-   * This function is also used by the 10-second fallback sync.
+   * Realtime handles instant updates.
+   * This function is also used for:
+   *
+   * - Realtime reconciliation
+   * - manual refresh
+   * - 10-second fallback synchronization
+   * - tab/window focus recovery
    */
   const loadBoard = useCallback(
     async (
@@ -53,21 +90,36 @@ export function useShopSession() {
       barberRows: Barber[],
       serviceRows: Service[],
     ) => {
-      const day = businessDateString(resolvedHours);
+      const day =
+        businessDateString(resolvedHours);
 
       let query = supabase
         .from("appointments")
         .select("*")
         .eq("appointment_date", day)
-        .order("appointment_time", { ascending: true });
+        .order(
+          "appointment_time",
+          { ascending: true },
+        );
 
       if (resolvedBranchId) {
-        query = query.eq("branch_id", resolvedBranchId);
+        query = query.eq(
+          "branch_id",
+          resolvedBranchId,
+        );
       }
 
-      const { data, error: loadError } = await query;
+      const {
+        data,
+        error: loadError,
+      } = await query;
 
       if (loadError) {
+        console.error(
+          "[staff] failed to load appointment board:",
+          loadError,
+        );
+
         setError(loadError.message);
         return;
       }
@@ -86,7 +138,7 @@ export function useShopSession() {
   );
 
   /**
-   * Initial staff/session/branch data load.
+   * Initial staff/session/branch load.
    */
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +150,9 @@ export function useShopSession() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
       if (!user) {
         setLoading(false);
@@ -130,7 +184,9 @@ export function useShopSession() {
           .order("name"),
       ]);
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
       const resolvedHours =
         hoursRow?.value &&
@@ -140,35 +196,58 @@ export function useShopSession() {
         "default_end" in hoursRow.value
           ? {
               default_start: String(
-                (hoursRow.value as { default_start: string }).default_start,
+                (
+                  hoursRow.value as {
+                    default_start: string;
+                  }
+                ).default_start,
               ),
+
               default_end: String(
-                (hoursRow.value as { default_end: string }).default_end,
+                (
+                  hoursRow.value as {
+                    default_end: string;
+                  }
+                ).default_end,
               ),
             }
           : FALLBACK_HOURS;
 
       setHours(resolvedHours);
-      setRole((profile?.role as AppRole | undefined) ?? null);
+
+      setRole(
+        (profile?.role as
+          | AppRole
+          | undefined) ?? null,
+      );
+
       setBranches(branchRows ?? []);
 
       /**
-       * Resolve the branch this staff member is allowed to access.
+       * Resolve the branch this staff member
+       * is allowed to access.
        *
-       * Owners may default to the first active branch because owner access
-       * bypasses normal branch scoping.
+       * Owners may default to the first active
+       * branch because owner access bypasses
+       * normal branch scoping.
        */
-      const myBranchIds = await getStaffBranchIds(
-        supabase,
-        user.id,
-      );
+      const myBranchIds =
+        await getStaffBranchIds(
+          supabase,
+          user.id,
+        );
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
       const resolvedBranch =
         myBranchIds[0] ??
         (profile?.role === "owner"
-          ? (branchRows?.[0]?.id ?? null)
+          ? (
+              branchRows?.[0]?.id ??
+              null
+            )
           : null);
 
       setBranchId(resolvedBranch);
@@ -205,10 +284,15 @@ export function useShopSession() {
         serviceQuery,
       ]);
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
-      const barbersList = (barberRows ?? []) as Barber[];
-      const servicesList = (serviceRows ?? []) as Service[];
+      const barbersList =
+        (barberRows ?? []) as Barber[];
+
+      const servicesList =
+        (serviceRows ?? []) as Service[];
 
       setBarbers(barbersList);
       setServices(servicesList);
@@ -228,13 +312,24 @@ export function useShopSession() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, loadBoard]);
+  }, [
+    supabase,
+    loadBoard,
+  ]);
 
   /**
    * Realtime appointment updates.
    *
-   * When Supabase Realtime is healthy, new bookings and appointment
-   * status changes should appear immediately.
+   * Step 1:
+   * Merge the Realtime row immediately so the
+   * dashboard responds without waiting.
+   *
+   * Step 2:
+   * Fetch the authoritative board from the DB
+   * immediately afterward.
+   *
+   * This keeps /cashier and /barber synchronized
+   * through the same central state.
    */
   useBranchChannel({
     branchId,
@@ -248,6 +343,13 @@ export function useShopSession() {
           services,
         ),
       );
+
+      void loadBoard(
+        branchId,
+        hours,
+        barbers,
+        services,
+      );
     },
 
     onAppointmentUpdate: (appointment) => {
@@ -258,6 +360,13 @@ export function useShopSession() {
           barbers,
           services,
         ),
+      );
+
+      void loadBoard(
+        branchId,
+        hours,
+        barbers,
+        services,
       );
     },
   });
@@ -283,13 +392,17 @@ export function useShopSession() {
   /**
    * Fallback synchronization.
    *
-   * Realtime gives us instant updates when available.
-   * Every 10 seconds we also fetch the authoritative state from
-   * Supabase so a missed Realtime event never leaves the cashier,
-   * barber, or admin dashboard stale.
+   * Realtime is the primary path.
+   *
+   * Every 10 seconds we also request the
+   * authoritative board so a missed WebSocket
+   * event cannot leave a staff screen stale.
    */
   useEffect(() => {
-    if (loading || !branchId) {
+    if (
+      loading ||
+      !branchId
+    ) {
       return;
     }
 
@@ -302,23 +415,28 @@ export function useShopSession() {
       );
     };
 
-    const intervalId = window.setInterval(
-      syncBoard,
-      BOARD_REFRESH_INTERVAL_MS,
-    );
+    const intervalId =
+      window.setInterval(
+        syncBoard,
+        BOARD_REFRESH_INTERVAL_MS,
+      );
 
     /**
-     * When the browser tab becomes active again, refresh immediately
-     * instead of waiting for the next 10-second interval.
+     * Immediately synchronize when a staff
+     * member returns to this browser tab.
      */
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
         syncBoard();
       }
     };
 
     /**
-     * Also refresh when the staff member returns to the browser window.
+     * Also synchronize when the browser
+     * window receives focus.
      */
     const handleFocus = () => {
       syncBoard();
