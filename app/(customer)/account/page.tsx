@@ -105,7 +105,7 @@ export default async function AccountPage() {
     if (!myPackagesByPackageId.has(row.package_id)) {
       myPackagesByPackageId.set(row.package_id, {
         id: row.id,
-        status: row.status,
+        status: row.status as CustomerPackageInfo["status"],
         sessionsUsed: row.sessions_used,
         sessionsTotal: row.sessions_total,
         expiresAt: row.expires_at,
@@ -160,9 +160,17 @@ export default async function AccountPage() {
                     })}
                   </p>
                 </div>
-                <span className="font-display text-3xl uppercase text-paper">
-                  <CountdownLabel target={nextBooking.appointment_start} />
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="font-display text-3xl uppercase text-paper">
+                    <CountdownLabel target={nextBooking.appointment_start} />
+                  </span>
+                  <Link
+                    href="/account/bookings"
+                    className="font-sans text-xs font-semibold tracking-widest text-ink-400 hover:text-paper"
+                  >
+                    MANAGE BOOKING →
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="mt-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">

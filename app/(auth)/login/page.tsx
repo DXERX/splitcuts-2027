@@ -57,6 +57,13 @@ export default function LoginPage() {
       return;
     }
 
+    // A customer who booked by phone as a guest before ever signing in has
+    // appointments with no customer_id attached -- fire-and-forget this on
+    // every successful login so those bookings (and any rewards progress
+    // tied to them going forward) attach to the account the moment they're
+    // actually signed in, not just the first time their phone gets set.
+    void supabase.rpc("link_my_guest_bookings");
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("phone")

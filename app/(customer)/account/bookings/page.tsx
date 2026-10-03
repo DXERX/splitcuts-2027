@@ -3,12 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { Container } from "@/components/ui/Container";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { BookingRow } from "@/components/account/BookingRow";
+import { ManageBookingRow } from "@/components/account/ManageBookingRow";
 
 type Row = {
   id: string;
+  barber_id: string;
   appointment_start: string;
   status: string;
-  services: { name_en: string | null } | { name_en: string | null }[] | null;
+  services: { name_en: string | null; duration: number | null } | { name_en: string | null; duration: number | null }[] | null;
   barbers:
     | { name: string | null; nickname: string | null }
     | { name: string | null; nickname: string | null }[]
@@ -29,7 +31,9 @@ export default async function BookingsPage() {
 
   const { data } = await supabase
     .from("appointments")
-    .select("id, appointment_start, status, services:services(name_en), barbers:barbers(name, nickname)")
+    .select(
+      "id, barber_id, appointment_start, status, services:services(name_en, duration), barbers:barbers(name, nickname)",
+    )
     .eq("customer_id", user.id)
     .order("appointment_start", { ascending: false });
 
@@ -50,9 +54,9 @@ export default async function BookingsPage() {
   const cancelled = rows.filter((r) => r.status === "cancelled" || r.status === "no_show");
 
   const sections = [
-    { label: "UPCOMING", items: upcoming },
-    { label: "PAST", items: past },
-    { label: "CANCELLED", items: cancelled },
+    { label: "UPCOMING", items: upcoming, manageable: true },
+    { label: "PAST", items: past, manageable: false },
+    { label: "CANCELLED", items: cancelled, manageable: false },
   ];
 
   return (
@@ -70,7 +74,18 @@ export default async function BookingsPage() {
               {section.items.map((r) => {
                 const service = one(r.services);
                 const barber = one(r.barbers);
-                return (
+                return section.manageable ? (
+                  <ManageBookingRow
+                    key={r.id}
+                    id={r.id}
+                    barberId={r.barber_id}
+                    serviceName={service?.name_en ?? "Service"}
+                    barberName={barber?.name || barber?.nickname || "your barber"}
+                    durationMinutes={service?.duration ?? 30}
+                    start={r.appointment_start}
+                    status={r.status}
+                  />
+                ) : (
                   <BookingRow
                     key={r.id}
                     serviceName={service?.name_en ?? "Service"}
