@@ -8,19 +8,32 @@ import { UnlockBanner } from "@/components/account/UnlockBanner";
 
 export default async function RewardsPage() {
   const supabase = await createClient();
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect("/login");
+  if (!user) {
+    redirect("/login");
+  }
 
-  const [{ data: progress }, { data: availableRewards }, { data: transactions }] = await Promise.all([
-    supabase.from("customer_loyalty_progress").select("*").eq("customer_id", user.id).maybeSingle(),
+  const [
+    { data: progress },
+    { data: availableRewards },
+    { data: transactions },
+  ] = await Promise.all([
+    supabase
+      .from("customer_loyalty_progress")
+      .select("*")
+      .eq("customer_id", user.id)
+      .maybeSingle(),
+
     supabase
       .from("rewards")
       .select("id, reward_type, status, earned_at, redeemed_at")
       .eq("customer_id", user.id)
       .order("earned_at", { ascending: false }),
+
     supabase
       .from("loyalty_transactions")
       .select("id, type, amount, reason, created_at")
@@ -29,23 +42,45 @@ export default async function RewardsPage() {
       .limit(20),
   ]);
 
-  const visitsRequired = progress?.visits_required ?? 5;
-  const visitsProgress = progress ? progress.visits_progress % visitsRequired : 0;
-  const remaining = visitsRequired - visitsProgress;
-  const hasUnlockedReward = (availableRewards ?? []).some((r) => r.status === "available");
+  /*
+   * Supabase generated types allow loyalty progress values to be null.
+   * Normalize them before doing any arithmetic.
+   */
+  const rawVisitsRequired = progress?.visits_required ?? 5;
+  const visitsRequired =
+    rawVisitsRequired > 0 ? rawVisitsRequired : 5;
+
+  const rawVisitsProgress = progress?.visits_progress ?? 0;
+  const visitsProgress = rawVisitsProgress % visitsRequired;
+
+  const remaining = Math.max(
+    visitsRequired - visitsProgress,
+    0,
+  );
+
+  const hasUnlockedReward = (availableRewards ?? []).some(
+    (reward) => reward.status === "available",
+  );
 
   return (
     <main className="min-h-screen bg-ink pt-[var(--nav-height)] pb-24">
       <Container wide className="py-10 md:py-16">
         <SectionLabel index="—" label="SPLIT REWARDS" />
+
         <h1 className="mt-4 font-display text-display-md uppercase text-paper">
           {progress?.name ?? "MEMBERSHIP"}.
         </h1>
 
         <div className="mt-10 hairline p-6 md:p-10">
-          <span className="tag-number text-ink-600">YOUR PROGRESS</span>
+          <span className="tag-number text-ink-600">
+            YOUR PROGRESS
+          </span>
+
           <div className="mt-6">
-            <RewardDots total={visitsRequired} progress={visitsProgress} />
+            <RewardDots
+              total={visitsRequired}
+              progress={visitsProgress}
+            />
           </div>
 
           <div className="mt-8">
@@ -53,17 +88,24 @@ export default async function RewardsPage() {
               <UnlockBanner label="FREE CUT UNLOCKED." />
             ) : remaining === 1 ? (
               <p className="font-display text-xl uppercase text-paper">
-                ONE MORE CUT. NEXT ONE'S ON US.
+                ONE MORE CUT. NEXT ONE&apos;S ON US.
               </p>
             ) : (
               <p className="font-sans text-sm text-ink-400">
-                {remaining} more visit{remaining === 1 ? "" : "s"} until your next free cut.
+                {remaining} more visit
+                {remaining === 1 ? "" : "s"} until your next free
+                cut.
               </p>
             )}
           </div>
 
           {hasUnlockedReward && (
-            <LinkButton href="/book" variant="chrome" size="lg" className="mt-8">
+            <LinkButton
+              href="/book"
+              variant="chrome"
+              size="lg"
+              className="mt-8"
+            >
               BOOK YOUR FREE CUT
             </LinkButton>
           )}
@@ -71,30 +113,49 @@ export default async function RewardsPage() {
 
         <div className="mt-16">
           <SectionLabel index="—" label="HISTORY" />
+
           <div className="mt-6 hairline divide-y divide-ink-800">
-            {(transactions ?? []).map((t) => (
-              <div key={t.id} className="flex items-center justify-between px-6 py-4">
-                <div>
-                  <p className="font-sans text-sm text-paper">
-                    {t.reason ?? (t.type === "credit" ? "Visit credited" : t.type)}
-                  </p>
-                  <p className="mt-0.5 font-sans text-xs text-ink-400">
-                    {new Date(t.created_at).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </p>
+            {(transactions ?? []).map((transaction) => {
+              const amount = transaction.amount ?? 0;
+
+              return (
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between px-6 py-4"
+                >
+                  <div>
+                    <p className="font-sans text-sm text-paper">
+                      {transaction.reason ??
+                        (transaction.type === "credit"
+                          ? "Visit credited"
+                          : transaction.type ?? "Reward activity")}
+                    </p>
+
+                    <p className="mt-0.5 font-sans text-xs text-ink-400">
+                      {transaction.created_at
+                        ? new Date(
+                            transaction.created_at,
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        : "—"}
+                    </p>
+                  </div>
+
+                  <span className="font-sans text-sm font-semibold text-paper">
+                    {amount > 0 ? "+" : ""}
+                    {amount}
+                  </span>
                 </div>
-                <span className="font-sans text-sm font-semibold text-paper">
-                  {t.amount > 0 ? "+" : ""}
-                  {t.amount}
-                </span>
-              </div>
-            ))}
+              );
+            })}
+
             {(transactions ?? []).length === 0 && (
               <p className="px-6 py-6 font-sans text-sm text-ink-400">
-                Your rewards history will show up here after your first visit.
+                Your rewards history will show up here after your
+                first visit.
               </p>
             )}
           </div>

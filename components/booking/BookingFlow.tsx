@@ -292,23 +292,34 @@ export function BookingFlow({
 
     for (const svc of selectedServices) {
       const slotStr = toHHMM(cursor);
-      const { data, error } = await supabase.rpc("create_appointment", {
-        p_customer_id: customerId,
-        p_barber_id: resolvedBarberId,
-        p_service_id: svc.id,
-        p_appointment_date: date,
-        p_appointment_time: `${slotStr}:00`,
-        // customer_name is NOT NULL on the live appointments table -- name is
-        // an optional field in this flow, so always fall back to something,
-        // never null.
-        p_customer_name: name || phone || "Guest",
-        p_customer_phone: normalizedPhone || null,
-        p_customer_email: email.trim() || null,
-        p_notes: selectedServices.length > 1 ? "Combined booking" : null,
-        p_customer_package_id: usePackageRedemption && packageEligible ? activePackage!.id : null,
-      });
+const { data, error } = await supabase.rpc("create_appointment", {
+  // Guest bookings intentionally use NULL customer_id at runtime.
+  // The generated Supabase RPC type currently declares this parameter
+  // as string, so keep the runtime value intact and narrow only the TS type.
+  p_customer_id: (customerId ?? null) as unknown as string,
 
-      if (error) {
+  p_barber_id: resolvedBarberId,
+  p_service_id: svc.id,
+  p_appointment_date: date,
+  p_appointment_time: `${slotStr}:00`,
+
+  // customer_name is NOT NULL in appointments.
+  p_customer_name: name || phone || "Guest",
+
+  // Optional RPC parameters should be omitted/undefined rather than
+  // explicitly passing null according to the generated Supabase types.
+  p_customer_phone: normalizedPhone || undefined,
+  p_customer_email: email.trim() || undefined,
+  p_notes:
+    selectedServices.length > 1
+      ? "Combined booking"
+      : undefined,
+
+  p_customer_package_id:
+    usePackageRedemption && packageEligible
+      ? activePackage?.id
+      : undefined,
+});      if (error) {
         failureMessage = error.message;
         break;
       }

@@ -1,32 +1,60 @@
 // lib/roles.ts
-// Client-side role helpers. These are UX conveniences only (which nav to
-// show, which page to redirect to) -- the real enforcement is Postgres RLS
-// and the RPCs in supabase/migrations. Never use this file to decide whether
-// a request is *allowed*, only where to *route* it.
+// Client-side role helpers.
 //
-// NOTE: the live app_role enum is owner/manager/cashier/customer -- there is
-// no "barber" account role. Barbers are just a table of service providers
-// (see the `barbers` table); they don't sign in themselves today. The
-// /barber schedule view is a staff tool (any branch staff can open it and
-// pick which barber's day to look at), not a barber's personal login.
+// These helpers are for UX/navigation only:
+// - deciding which navigation to show
+// - deciding where to redirect a signed-in user
+//
+// Authorization and access control must remain enforced by
+// Postgres RLS and server-side RPC/database policies.
 
-export const APP_ROLES = ["owner", "manager", "cashier", "customer"] as const;
+export const APP_ROLES = [
+  "owner",
+  "manager",
+  "cashier",
+  "barber",
+  "customer",
+] as const;
+
 export type AppRole = (typeof APP_ROLES)[number];
 
-export const STAFF_ROLES: AppRole[] = ["owner", "manager", "cashier"];
+export const STAFF_ROLES = [
+  "owner",
+  "manager",
+  "cashier",
+  "barber",
+] as const satisfies readonly AppRole[];
 
-export function isStaffRole(role: AppRole | null | undefined): boolean {
-  return !!role && STAFF_ROLES.includes(role);
+/**
+ * Returns true when the supplied role belongs to a staff account.
+ */
+export function isStaffRole(
+  role: AppRole | null | undefined,
+): boolean {
+  if (!role) {
+    return false;
+  }
+
+  return (STAFF_ROLES as readonly AppRole[]).includes(role);
 }
 
-/** Where to send a signed-in user right after auth, based on their role. */
-export function homeRouteForRole(role: AppRole | null | undefined): string {
+/**
+ * Where to send a signed-in user immediately after authentication.
+ */
+export function homeRouteForRole(
+  role: AppRole | null | undefined,
+): string {
   switch (role) {
     case "owner":
     case "manager":
       return "/admin";
+
     case "cashier":
       return "/cashier";
+
+    case "barber":
+      return "/barber";
+
     case "customer":
     default:
       return "/book";
