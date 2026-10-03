@@ -3,11 +3,11 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import clsx from "clsx";
-
 import {
   AnimatePresence,
   motion,
@@ -15,10 +15,8 @@ import {
 
 import { StaffShell } from "@/components/staff/StaffShell";
 import { FloorBoard } from "@/components/staff/FloorBoard";
-
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { shopAudio } from "@/lib/audio/shopAudio";
-
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
 
 import {
@@ -38,14 +36,14 @@ interface PendingPackageRequest {
   package_name: string | null;
 }
 
-/**
- * Client-only clock.
- *
- * The initial value is null intentionally.
- * This prevents the server and browser from
- * rendering different timestamps during
- * hydration.
- */
+const PAGE_RELOAD_INTERVAL_MS = 10_000;
+
+const AUDIO_ENABLED_KEY =
+  "splitcuts_staff_audio_enabled";
+
+const CASHIER_BOOKING_IDS_KEY =
+  "splitcuts_cashier_booking_ids";
+
 function useClock() {
   const [now, setNow] =
     useState<Date | null>(null);
@@ -94,10 +92,175 @@ export default function CashierShopModePage() {
     setActivatingId,
   ] = useState<string | null>(null);
 
+  const bookingComparisonDone =
+    useRef(false);
+
   /**
-   * Load pending package-payment requests
-   * for this branch.
+   * Remember whether this device had audio enabled.
+   *
+   * Browser autoplay rules may still require a user gesture
+   * after a fresh browser/session launch.
    */
+  useEffect(() => {
+    const remembered =
+      window.localStorage.getItem(
+        AUDIO_ENABLED_KEY,
+      ) === "1";
+
+    if (!remembered) {
+      return;
+    }
+
+    void shopAudio
+      .enable()
+      .then(() => {
+        setAudioEnabled(true);
+      })
+      .catch(() => {
+        setAudioEnabled(false);
+      });
+  }, []);
+
+  /**
+   * Detect bookings that appeared since the previous
+   * full-page reload.
+   *
+   * The first visit only establishes the baseline and
+   * never announces existing bookings as new.
+   */
+  useEffect(() => {
+    if (
+      shop.loading ||
+      !shop.branchId ||
+      bookingComparisonDone.current
+    ) {
+      return;
+    }
+
+    bookingComparisonDone.current = true;
+
+    const currentIds =
+      shop.appointments.map(
+        (appointment) =>
+          appointment.id,
+      );
+
+    const stored =
+      window.localStorage.getItem(
+        CASHIER_BOOKING_IDS_KEY,
+      );
+
+    if (stored) {
+      try {
+        const previousIds =
+          JSON.parse(stored) as string[];
+
+        const previousSet =
+          new Set(previousIds);
+
+        const newBookings =
+          shop.appointments.filter(
+            (appointment) =>
+              !previousSet.has(
+                appointment.id,
+              ),
+          );
+
+        if (newBookings.length > 0) {
+  const newest =
+    newBookings[newBookings.length - 1];
+
+  if (!newest) {
+    return;
+  }
+
+  setFeedId(newest.id);
+
+  if (audioEnabled) {
+    shopAudio.playChime();
+
+    window.setTimeout(() => {
+      shopAudio.playChime();
+    }, 350);
+
+    window.setTimeout(() => {
+      shopAudio.playChime();
+    }, 700);
+
+    window.setTimeout(() => {
+      shopAudio.announce(
+        "New booking",
+        formatSlotLabel(
+          slotTime(
+            newest.appointment_time,
+          ),
+        ),
+      );
+    }, 1050);
+  }
+}
+      } catch (error) {
+        console.warn(
+          "[cashier] could not parse stored booking IDs:",
+          error,
+        );
+      }
+    }
+
+    window.localStorage.setItem(
+      CASHIER_BOOKING_IDS_KEY,
+      JSON.stringify(currentIds),
+    );
+  }, [
+    shop.loading,
+    shop.branchId,
+    shop.appointments,
+    audioEnabled,
+  ]);
+
+  /**
+   * Keep the saved baseline current before each reload.
+   */
+  useEffect(() => {
+    if (
+      shop.loading ||
+      !shop.branchId
+    ) {
+      return;
+    }
+
+    const currentIds =
+      shop.appointments.map(
+        (appointment) =>
+          appointment.id,
+      );
+
+    window.localStorage.setItem(
+      CASHIER_BOOKING_IDS_KEY,
+      JSON.stringify(currentIds),
+    );
+  }, [
+    shop.loading,
+    shop.branchId,
+    shop.appointments,
+  ]);
+
+  /**
+   * Guaranteed full browser reload every 10 seconds.
+   */
+  useEffect(() => {
+    const reloadInterval =
+      window.setInterval(() => {
+        window.location.reload();
+      }, PAGE_RELOAD_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(
+        reloadInterval,
+      );
+    };
+  }, []);
+
   useEffect(() => {
     if (!shop.branchId) {
       return;
@@ -178,15 +341,9 @@ export default function CashierShopModePage() {
   ]);
 
   /**
-   * Cashier-specific Realtime behavior.
+   * Keep Realtime as the fast path.
    *
-   * useShopSession already owns appointment
-   * synchronization.
-   *
-   * This subscription is only responsible for:
-   *
-   * - highlighting the latest booking
-   * - playing the cashier notification
+   * The reload comparison remains the guaranteed fallback.
    */
   useBranchChannel({
     branchId: shop.branchId,
@@ -201,18 +358,20 @@ export default function CashierShopModePage() {
         return;
       }
 
-      const timeMatch =
-        notification.message.match(
-          /at (.+)$/,
+      if (audioEnabled) {
+        const timeMatch =
+          notification.message.match(
+            /at (.+)$/,
+          );
+
+        shopAudio.playChime();
+
+        shopAudio.announce(
+          "New booking",
+          timeMatch?.[1] ??
+            "the scheduled time",
         );
-
-      shopAudio.playChime();
-
-      shopAudio.announce(
-        "You",
-        timeMatch?.[1] ??
-          "the scheduled time",
-      );
+      }
     },
 
     onNewAppointment: (
@@ -223,6 +382,28 @@ export default function CashierShopModePage() {
       );
     },
   });
+
+  async function enableAudio() {
+    try {
+      await shopAudio.enable();
+
+      setAudioEnabled(true);
+
+      window.localStorage.setItem(
+        AUDIO_ENABLED_KEY,
+        "1",
+      );
+
+      shopAudio.testSound();
+    } catch (error) {
+      console.error(
+        "[cashier] audio enable failed:",
+        error,
+      );
+
+      setAudioEnabled(false);
+    }
+  }
 
   async function activatePackage(
     id: string,
@@ -298,12 +479,6 @@ export default function CashierShopModePage() {
         (appointment) =>
           appointment.status ===
           "completed",
-      ).length,
-
-      noShow: rows.filter(
-        (appointment) =>
-          appointment.status ===
-          "no_show",
       ).length,
 
       revenue: rows
@@ -419,15 +594,9 @@ export default function CashierShopModePage() {
 
         {!audioEnabled ? (
           <button
-            onClick={() =>
-              void shopAudio
-                .enable()
-                .then(() =>
-                  setAudioEnabled(
-                    true,
-                  ),
-                )
-            }
+            onClick={() => {
+              void enableAudio();
+            }}
             className="hairline px-4 py-2 font-sans text-xs font-semibold tracking-widest text-paper hover:border-ink-400"
           >
             ENABLE AUDIO
@@ -464,9 +633,11 @@ export default function CashierShopModePage() {
               </span>
 
               <span className="font-sans text-sm text-paper">
-                {latest.customer_name}
+                {latest.customer_name ??
+                  "Customer"}
                 {" · "}
-                {latest.barber_name}
+                {latest.barber_name ??
+                  "Barber"}
                 {" · "}
                 {formatSlotLabel(
                   slotTime(
@@ -589,14 +760,12 @@ export default function CashierShopModePage() {
                     className={clsx(
                       "font-sans text-[10px] font-semibold tracking-widest",
                       STATUS_STYLE[
-                        appointment
-                          .status
+                        appointment.status
                       ],
                     )}
                   >
                     {STATUS_LABEL[
-                      appointment
-                        .status
+                      appointment.status
                     ] ??
                       appointment.status}
                   </span>
@@ -604,8 +773,8 @@ export default function CashierShopModePage() {
               ),
             )}
 
-          {shop.appointments
-            .length === 0 &&
+          {shop.appointments.length ===
+            0 &&
             !shop.loading && (
               <p className="px-5 py-8 font-sans text-sm text-ink-400">
                 No appointments yet
