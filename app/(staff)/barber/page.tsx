@@ -24,6 +24,46 @@ import {
 type AppointmentStatus =
   LiveAppointment["status"];
 
+  /**
+ * Restore the exact scroll position after a full
+ * 10-second browser reload.
+ */
+useEffect(() => {
+  const saved =
+    window.sessionStorage.getItem(
+      BARBER_SCROLL_POSITION_KEY,
+    );
+
+  if (!saved) {
+    return;
+  }
+
+  const y = Number(saved);
+
+  if (!Number.isFinite(y)) {
+    window.sessionStorage.removeItem(
+      BARBER_SCROLL_POSITION_KEY,
+    );
+    return;
+  }
+
+  /**
+   * Wait for the current page content to render,
+   * then restore without animation.
+   */
+  const frame = window.requestAnimationFrame(() => {
+    window.scrollTo({
+      top: y,
+      left: 0,
+      behavior: "auto",
+    });
+  });
+
+  return () => {
+    window.cancelAnimationFrame(frame);
+  };
+}, []);
+
 const PAGE_RELOAD_INTERVAL_MS = 10_000;
 
 const AUDIO_ENABLED_KEY =
@@ -31,6 +71,8 @@ const AUDIO_ENABLED_KEY =
 
 const BARBER_BOOKING_IDS_KEY =
   "splitcuts_barber_booking_ids";
+const BARBER_SCROLL_POSITION_KEY =
+"splitcuts_barber_scroll_position";
 
 const NEXT_STATUS: Partial<
   Record<

@@ -36,6 +36,42 @@ interface PendingPackageRequest {
   package_name: string | null;
 }
 
+/**
+ * Restore the cashier's exact position after
+ * each automatic full-page refresh.
+ */
+useEffect(() => {
+  const saved =
+    window.sessionStorage.getItem(
+      CASHIER_SCROLL_POSITION_KEY,
+    );
+
+  if (!saved) {
+    return;
+  }
+
+  const y = Number(saved);
+
+  if (!Number.isFinite(y)) {
+    window.sessionStorage.removeItem(
+      CASHIER_SCROLL_POSITION_KEY,
+    );
+    return;
+  }
+
+  const frame = window.requestAnimationFrame(() => {
+    window.scrollTo({
+      top: y,
+      left: 0,
+      behavior: "auto",
+    });
+  });
+
+  return () => {
+    window.cancelAnimationFrame(frame);
+  };
+}, []);
+
 const PAGE_RELOAD_INTERVAL_MS = 10_000;
 
 const AUDIO_ENABLED_KEY =
@@ -43,6 +79,9 @@ const AUDIO_ENABLED_KEY =
 
 const CASHIER_BOOKING_IDS_KEY =
   "splitcuts_cashier_booking_ids";
+
+  const CASHIER_SCROLL_POSITION_KEY =
+  "splitcuts_cashier_scroll_position";
 
 function useClock() {
   const [now, setNow] =
@@ -251,7 +290,12 @@ export default function CashierShopModePage() {
   useEffect(() => {
     const reloadInterval =
       window.setInterval(() => {
-        window.location.reload();
+        window.sessionStorage.setItem(
+  CASHIER_SCROLL_POSITION_KEY,
+  String(window.scrollY),
+);
+
+window.location.reload();
       }, PAGE_RELOAD_INTERVAL_MS);
 
     return () => {
