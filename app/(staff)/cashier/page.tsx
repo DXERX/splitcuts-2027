@@ -35,7 +35,7 @@ interface PendingPackageRequest {
   package_name: string | null;
 }
 
-const PAGE_RELOAD_INTERVAL_MS = 10_000;
+const PAGE_RELOAD_INTERVAL_MS = 600_000;
 
 const AUDIO_ENABLED_KEY =
   "splitcuts_staff_audio_enabled";

@@ -50,7 +50,7 @@ type AppointmentStatus =
 
 
 
- const PAGE_RELOAD_INTERVAL_MS = 10_000;
+ const PAGE_RELOAD_INTERVAL_MS = 600_000;
 
 
 
