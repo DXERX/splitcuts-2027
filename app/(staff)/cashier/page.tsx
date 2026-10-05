@@ -7,6 +7,7 @@ import { StaffShell } from "@/components/staff/StaffShell";
 import { FloorBoard } from "@/components/staff/FloorBoard";
 import { StaffDatePicker } from "@/components/staff/StaffDatePicker";
 import { StatusFilterChips } from "@/components/staff/StatusFilterChips";
+import { TodayOffPanel } from "@/components/staff/TimeOffPanel";
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { shopAudio } from "@/lib/audio/shopAudio";
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
@@ -125,6 +126,15 @@ export default function CashierShopModePage() {
           <span className="font-sans text-[10px] font-semibold tracking-widest text-ink-400">LOADING…</span>
         )}
       </div>
+
+      <section className="px-4 pt-2 md:px-8">
+        <TodayOffPanel
+          barbers={shop.barbers}
+          supabase={shop.supabase}
+          businessDate={shop.businessDate}
+          onChange={shop.refresh}
+        />
+      </section>
 
       <div className="grid grid-cols-2 gap-px bg-ink-800 md:grid-cols-5">
         {[

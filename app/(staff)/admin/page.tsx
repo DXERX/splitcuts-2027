@@ -6,7 +6,7 @@ import { StaffShell } from "@/components/staff/StaffShell";
 import { FloorBoard } from "@/components/staff/FloorBoard";
 import { StaffDatePicker } from "@/components/staff/StaffDatePicker";
 import { StatusFilterChips } from "@/components/staff/StatusFilterChips";
-import { TimeOffPanel } from "@/components/staff/TimeOffPanel";
+import { TodayOffPanel } from "@/components/staff/TimeOffPanel";
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
 import { hydrateAppointments, STATUS_LABEL, STATUS_STYLE, type LiveAppointment } from "@/lib/staff/appointments";
@@ -209,7 +209,12 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          <TimeOffPanel barbers={shop.barbers} supabase={shop.supabase} onChange={shop.refresh} />
+          <TodayOffPanel
+            barbers={shop.barbers}
+            supabase={shop.supabase}
+            businessDate={shop.businessDate}
+            onChange={shop.refresh}
+          />
         </div>
       </section>
 
