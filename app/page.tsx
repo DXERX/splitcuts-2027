@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { homeRouteForRole, isStaffRole } from "@/lib/roles";
+import { homeRouteForRole, isStaffRole, type AppRole } from "@/lib/roles";
 import { Hero } from "@/components/home/Hero";
 import { HomeBooking } from "@/components/home/HomeBooking";
 import { RewardsStrip } from "@/components/home/RewardsStrip";
@@ -23,8 +23,13 @@ export default async function HomePage() {
       .eq("id", user.id)
       .single();
 
-    if (isStaffRole(profile?.role)) {
-      redirect(homeRouteForRole(profile?.role));
+    // profiles.role is the Postgres app_role enum, which also lists "barber"
+    // as a possible value even though nothing ever assigns it to a profile
+    // (see lib/roles.ts -- barbers are a plain table, not accounts). Same
+    // cast useShopSession.ts already uses for this column.
+    const role = profile?.role as AppRole | undefined;
+    if (isStaffRole(role)) {
+      redirect(homeRouteForRole(role));
     }
   }
 

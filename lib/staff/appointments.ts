@@ -1,19 +1,9 @@
+import type { AppointmentStatus } from "@/lib/database.types";
 import type { Database } from "@/lib/database.types";
 
-export type Appointment =
-  Database["public"]["Tables"]["appointments"]["Row"];
-
-export type Barber =
-  Database["public"]["Tables"]["barbers"]["Row"];
-
-export type Service =
-  Database["public"]["Tables"]["services"]["Row"];
-
-/**
- * Derive appointment status directly from the appointments table.
- * This keeps the type synchronized with the generated Supabase types.
- */
-export type AppointmentStatus = Appointment["status"];
+export type Appointment = Database["public"]["Tables"]["appointments"]["Row"];
+export type Barber = Database["public"]["Tables"]["barbers"]["Row"];
+export type Service = Database["public"]["Tables"]["services"]["Row"];
 
 export interface LiveAppointment extends Appointment {
   barber_name: string | null;
@@ -30,7 +20,7 @@ export const STATUS_LABEL: Record<AppointmentStatus, string> = {
   no_show: "NO SHOW",
 };
 
-export const STATUS_STYLE: Record<AppointmentStatus, string> = {
+export const STATUS_STYLE: Record<string, string> = {
   booked: "text-paper",
   checked_in: "text-status-hold",
   in_service: "text-status-live",
@@ -44,33 +34,15 @@ export function hydrateAppointments(
   barbers: Barber[],
   services: Service[],
 ): LiveAppointment[] {
-  const barberMap = new Map(
-    barbers.map((barber) => [barber.id, barber]),
-  );
-
-  const serviceMap = new Map(
-    services.map((service) => [service.id, service]),
-  );
-
-  return rows.map((appointment) => {
-    const barber = appointment.barber_id
-      ? barberMap.get(appointment.barber_id)
-      : undefined;
-
-    const service = appointment.service_id
-      ? serviceMap.get(appointment.service_id)
-      : undefined;
-
+  const barberMap = new Map(barbers.map((b) => [b.id, b]));
+  const serviceMap = new Map(services.map((s) => [s.id, s]));
+  return rows.map((a) => {
+    const barber = barberMap.get(a.barber_id);
+    const service = a.service_id ? serviceMap.get(a.service_id) : undefined;
     return {
-      ...appointment,
-      barber_name:
-        barber?.name ||
-        barber?.nickname ||
-        null,
-      service_name:
-        service?.name_en ||
-        service?.name_ar ||
-        null,
+      ...a,
+      barber_name: barber?.name || barber?.nickname || null,
+      service_name: service?.name_en || service?.name_ar || null,
       duration: service?.duration ?? 30,
     };
   });
@@ -82,34 +54,13 @@ export function mergeLiveAppointment(
   barbers: Barber[],
   services: Service[],
 ): LiveAppointment[] {
-  const hydrated = hydrateAppointments(
-    [incoming],
-    barbers,
-    services,
-  )[0];
-
-  if (!hydrated) {
-    return prev;
-  }
-
-  const exists = prev.some(
-    (appointment) => appointment.id === incoming.id,
-  );
-
+  const hydrated = hydrateAppointments([incoming], barbers, services)[0];
+  if (!hydrated) return prev;
+  const exists = prev.some((a) => a.id === incoming.id);
   if (exists) {
-    return prev.map((appointment) =>
-      appointment.id === incoming.id
-        ? {
-            ...appointment,
-            ...hydrated,
-          }
-        : appointment,
-    );
+    return prev.map((a) => (a.id === incoming.id ? { ...a, ...hydrated } : a));
   }
-
   return [...prev, hydrated].sort((a, b) =>
-    (a.appointment_time ?? "").localeCompare(
-      b.appointment_time ?? "",
-    ),
+    (a.appointment_time ?? "").localeCompare(b.appointment_time ?? ""),
   );
 }

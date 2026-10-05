@@ -150,10 +150,13 @@ export async function POST(request: Request) {
       items: [
         ...appointments.map((a) => {
           const svc = one(a.services);
+          // service_id is nullable on the appointments table -- fall back to
+          // the appointment's own id so Tamara still gets a stable, unique
+          // reference/sku for this line item.
           return {
-            referenceId: a.service_id,
+            referenceId: a.service_id ?? a.id,
             name: svc?.name_en ?? "Service",
-            sku: a.service_id,
+            sku: a.service_id ?? a.id,
             quantity: 1,
             totalAmount: svc?.price ?? 0,
           };

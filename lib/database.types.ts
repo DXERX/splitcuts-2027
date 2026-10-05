@@ -6,6 +6,25 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+// Hand-added, not part of the `supabase gen types typescript` output below --
+// appointments.status is plain text with a CHECK constraint, not a real
+// Postgres enum (kept that way so the 154 pre-migration rows never had to
+// change type), so the CLI generates it as a bare `string` and can't produce
+// this union on its own. Keep it in sync with
+// supabase/migrations/0005_live_extend_rpcs.sql's
+// appointment_status_transitions rows if that ever changes.
+export type AppointmentStatus =
+  | "booked"
+  | "checked_in"
+  | "in_service"
+  | "completed"
+  | "cancelled"
+  | "no_show"
+
+// Same reasoning as AppointmentStatus above -- customer_packages.status
+// (migration 0013) is plain text with a CHECK constraint too.
+export type CustomerPackageStatus = "pending_payment" | "active" | "expired" | "cancelled"
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -47,7 +66,7 @@ export type Database = {
           id: string
           notes: string | null
           service_id: string | null
-          status: string
+          status: AppointmentStatus
           total_price: number | null
           updated_at: string
         }
@@ -68,7 +87,7 @@ export type Database = {
           id?: string
           notes?: string | null
           service_id?: string | null
-          status?: string
+          status?: AppointmentStatus
           total_price?: number | null
           updated_at?: string
         }
@@ -89,7 +108,7 @@ export type Database = {
           id?: string
           notes?: string | null
           service_id?: string | null
-          status?: string
+          status?: AppointmentStatus
           total_price?: number | null
           updated_at?: string
         }
@@ -466,7 +485,7 @@ export type Database = {
           requested_at: string
           sessions_total: number
           sessions_used: number
-          status: string
+          status: CustomerPackageStatus
           updated_at: string
         }
         Insert: {
@@ -480,7 +499,7 @@ export type Database = {
           requested_at?: string
           sessions_total: number
           sessions_used?: number
-          status?: string
+          status?: CustomerPackageStatus
           updated_at?: string
         }
         Update: {
@@ -494,7 +513,7 @@ export type Database = {
           requested_at?: string
           sessions_total?: number
           sessions_used?: number
-          status?: string
+          status?: CustomerPackageStatus
           updated_at?: string
         }
         Relationships: [
@@ -1354,7 +1373,7 @@ export type Database = {
           requested_at: string
           sessions_total: number
           sessions_used: number
-          status: string
+          status: CustomerPackageStatus
           updated_at: string
         }
         SetofOptions: {
@@ -1377,7 +1396,7 @@ export type Database = {
           requested_at: string
           sessions_total: number
           sessions_used: number
-          status: string
+          status: CustomerPackageStatus
           updated_at: string
         }
         SetofOptions: {
@@ -1388,16 +1407,24 @@ export type Database = {
         }
       }
       create_appointment: {
+        // p_customer_id and the optional p_customer_*/p_notes/p_customer_package_id
+        // params are all plain Postgres params with no NOT NULL constraint, so
+        // every caller (guest checkout, server route) legitimately passes an
+        // explicit null for any of them -- `supabase gen types` only infers
+        // optionality (whether the arg can be omitted) from each param's SQL
+        // DEFAULT, not whether null is an acceptable value, so these need the
+        // `| null` added by hand. See supabase/migrations/0005_live_extend_rpcs.sql
+        // (and 0008/0010/0011's create-appointment redefinitions) for the real signature.
         Args: {
           p_appointment_date: string
           p_appointment_time: string
           p_barber_id: string
-          p_customer_email?: string
-          p_customer_id: string
-          p_customer_name?: string
-          p_customer_package_id?: string
-          p_customer_phone?: string
-          p_notes?: string
+          p_customer_email?: string | null
+          p_customer_id: string | null
+          p_customer_name?: string | null
+          p_customer_package_id?: string | null
+          p_customer_phone?: string | null
+          p_notes?: string | null
           p_service_id: string
         }
         Returns: {
@@ -1417,7 +1444,7 @@ export type Database = {
           id: string
           notes: string | null
           service_id: string | null
-          status: string
+          status: AppointmentStatus
           total_price: number | null
           updated_at: string
         }
@@ -1474,7 +1501,7 @@ export type Database = {
           requested_at: string
           sessions_total: number
           sessions_used: number
-          status: string
+          status: CustomerPackageStatus
           updated_at: string
         }
         SetofOptions: {
@@ -1507,7 +1534,7 @@ export type Database = {
           id: string
           notes: string | null
           service_id: string | null
-          status: string
+          status: AppointmentStatus
           total_price: number | null
           updated_at: string
         }
@@ -1529,7 +1556,7 @@ export type Database = {
       update_appointment_status: {
         Args: {
           p_appointment_id: string
-          p_new_status: string
+          p_new_status: AppointmentStatus
           p_reason?: string
         }
         Returns: {
@@ -1549,7 +1576,7 @@ export type Database = {
           id: string
           notes: string | null
           service_id: string | null
-          status: string
+          status: AppointmentStatus
           total_price: number | null
           updated_at: string
         }
