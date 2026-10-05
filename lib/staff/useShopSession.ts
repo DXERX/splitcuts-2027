@@ -30,6 +30,7 @@ export function useShopSession() {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<LiveAppointment[]>([]);
+  const [offBarberIds, setOffBarberIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [boardLoading, setBoardLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +62,21 @@ export function useShopSession() {
         query = query.eq("branch_id", resolvedBranchId);
       }
 
-      const { data, error: loadError } = await query;
+      const [{ data, error: loadError }, offResult] =
+        barberRows.length > 0
+          ? await Promise.all([
+              query,
+              supabase
+                .from("barber_time_off")
+                .select("barber_id")
+                .eq("off_date", day)
+                .in(
+                  "barber_id",
+                  barberRows.map((b) => b.id),
+                ),
+            ])
+          : [await query, { data: [] as { barber_id: string }[] }];
+
       if (loadError) {
         setError(loadError.message);
         return;
@@ -69,6 +84,7 @@ export function useShopSession() {
       setError(null);
       loadedDayRef.current = day;
       setAppointments(hydrateAppointments((data ?? []) as LiveAppointment[], barberRows, serviceRows));
+      setOffBarberIds(new Set((offResult.data ?? []).map((r) => r.barber_id)));
     },
     [supabase],
   );
@@ -198,6 +214,7 @@ export function useShopSession() {
     services,
     appointments,
     setAppointments,
+    offBarberIds,
     businessDate,
     viewDate,
     setViewDate,

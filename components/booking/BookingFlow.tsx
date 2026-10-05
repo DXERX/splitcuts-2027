@@ -43,6 +43,7 @@ const BOOKING_ERROR_MESSAGES: Record<string, string> = {
   PACKAGE_EXPIRED: "That package has expired.",
   PACKAGE_SESSIONS_USED_UP: "That package's cuts are already used up.",
   PACKAGE_SERVICE_MISMATCH: "That package doesn't cover this service.",
+  BARBER_UNAVAILABLE: "That barber is off that day -- pick another barber or date.",
 };
 
 interface ActivePackage {
@@ -102,6 +103,10 @@ export function BookingFlow({
   const [usePackageRedemption, setUsePackageRedemption] = useState(false);
   const [noShowCount, setNoShowCount] = useState(0);
   const [myBusy, setMyBusy] = useState<{ start: string; duration: number }[]>([]);
+  // Barbers with a staff-set day off (vacation/sick) on the selected date --
+  // excluded from FIRST AVAILABLE and shown as fully unavailable if picked
+  // directly. See lib/database.types.ts's hand-added barber_time_off entry.
+  const [offBarberIds, setOffBarberIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     void (async () => {
@@ -167,11 +172,15 @@ export function BookingFlow({
 
   useEffect(() => {
     void (async () => {
-      const { data } = await supabase
-        .from("appointments")
-        .select("barber_id, appointment_time, services:services(duration)")
-        .eq("appointment_date", date)
-        .not("status", "in", "(cancelled,no_show)");
+      const [{ data }, { data: offRows }] = await Promise.all([
+        supabase
+          .from("appointments")
+          .select("barber_id, appointment_time, services:services(duration)")
+          .eq("appointment_date", date)
+          .not("status", "in", "(cancelled,no_show)"),
+        supabase.from("barber_time_off").select("barber_id").eq("off_date", date),
+      ]);
+      setOffBarberIds(new Set((offRows ?? []).map((r) => r.barber_id)));
 
       type Row = {
         barber_id: string;
@@ -240,15 +249,19 @@ export function BookingFlow({
       const customerClash = !slotFitsFreely(t, totalDuration, myBusy, hours);
       const barberFree =
         barberId === FIRST_AVAILABLE
-          ? barbers.some((b) => slotFitsFreely(t, totalDuration, dayBusy[b.id] ?? [], hours))
-          : slotFitsFreely(t, totalDuration, dayBusy[barberId] ?? [], hours);
+          ? barbers.some((b) => !offBarberIds.has(b.id) && slotFitsFreely(t, totalDuration, dayBusy[b.id] ?? [], hours))
+          : !offBarberIds.has(barberId) && slotFitsFreely(t, totalDuration, dayBusy[barberId] ?? [], hours);
       return { time: t, available: !past && !customerClash && barberFree };
     });
-  }, [allSlots, date, hours, barberId, barbers, dayBusy, totalDuration, myBusy]);
+  }, [allSlots, date, hours, barberId, barbers, dayBusy, totalDuration, myBusy, offBarberIds]);
+
+  const selectedBarberOffToday = barberId !== FIRST_AVAILABLE && offBarberIds.has(barberId);
 
   function resolveBarberId(atTime: string): string {
     if (barberId !== FIRST_AVAILABLE) return barberId;
-    const free = barbers.find((b) => slotFitsFreely(atTime, totalDuration, dayBusy[b.id] ?? [], hours));
+    const free = barbers.find(
+      (b) => !offBarberIds.has(b.id) && slotFitsFreely(atTime, totalDuration, dayBusy[b.id] ?? [], hours),
+    );
     return free?.id ?? barbers[0]?.id ?? "";
   }
 
@@ -292,34 +305,23 @@ export function BookingFlow({
 
     for (const svc of selectedServices) {
       const slotStr = toHHMM(cursor);
-const { data, error } = await supabase.rpc("create_appointment", {
-  // Guest bookings intentionally use NULL customer_id at runtime.
-  // The generated Supabase RPC type currently declares this parameter
-  // as string, so keep the runtime value intact and narrow only the TS type.
-  p_customer_id: (customerId ?? null) as unknown as string,
+      const { data, error } = await supabase.rpc("create_appointment", {
+        p_customer_id: customerId,
+        p_barber_id: resolvedBarberId,
+        p_service_id: svc.id,
+        p_appointment_date: date,
+        p_appointment_time: `${slotStr}:00`,
+        // customer_name is NOT NULL on the live appointments table -- name is
+        // an optional field in this flow, so always fall back to something,
+        // never null.
+        p_customer_name: name || phone || "Guest",
+        p_customer_phone: normalizedPhone || null,
+        p_customer_email: email.trim() || null,
+        p_notes: selectedServices.length > 1 ? "Combined booking" : null,
+        p_customer_package_id: usePackageRedemption && packageEligible ? activePackage!.id : null,
+      });
 
-  p_barber_id: resolvedBarberId,
-  p_service_id: svc.id,
-  p_appointment_date: date,
-  p_appointment_time: `${slotStr}:00`,
-
-  // customer_name is NOT NULL in appointments.
-  p_customer_name: name || phone || "Guest",
-
-  // Optional RPC parameters should be omitted/undefined rather than
-  // explicitly passing null according to the generated Supabase types.
-  p_customer_phone: normalizedPhone || undefined,
-  p_customer_email: email.trim() || undefined,
-  p_notes:
-    selectedServices.length > 1
-      ? "Combined booking"
-      : undefined,
-
-  p_customer_package_id:
-    usePackageRedemption && packageEligible
-      ? activePackage?.id
-      : undefined,
-});      if (error) {
+      if (error) {
         failureMessage = error.message;
         break;
       }
@@ -515,13 +517,20 @@ const { data, error } = await supabase.rpc("create_appointment", {
           <div className="mb-6">
             <DateQuickPicker selected={date} onSelect={setDate} />
           </div>
-          <p className="mb-4 font-sans text-xs text-ink-400">
-            Every 30 minutes
-            {barberId === FIRST_AVAILABLE
-              ? " · first free chair"
-              : ` · ${selectedBarber?.name || selectedBarber?.nickname || "this barber"} only`}
-            . Taken slots stay visible so nothing gets double-booked.
-          </p>
+          {selectedBarberOffToday ? (
+            <p className="mb-4 font-sans text-xs text-red-400">
+              {selectedBarber?.name || selectedBarber?.nickname || "This barber"} is off this day -- pick another
+              barber or date.
+            </p>
+          ) : (
+            <p className="mb-4 font-sans text-xs text-ink-400">
+              Every 30 minutes
+              {barberId === FIRST_AVAILABLE
+                ? " · first free chair"
+                : ` · ${selectedBarber?.name || selectedBarber?.nickname || "this barber"} only`}
+              . Taken slots stay visible so nothing gets double-booked.
+            </p>
+          )}
           <TimeSlots
             slots={slotStates}
             selected={time}

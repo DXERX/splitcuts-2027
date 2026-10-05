@@ -6,6 +6,7 @@ import { StaffShell } from "@/components/staff/StaffShell";
 import { FloorBoard } from "@/components/staff/FloorBoard";
 import { StaffDatePicker } from "@/components/staff/StaffDatePicker";
 import { StatusFilterChips } from "@/components/staff/StatusFilterChips";
+import { TimeOffPanel } from "@/components/staff/TimeOffPanel";
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
 import { hydrateAppointments, STATUS_LABEL, STATUS_STYLE, type LiveAppointment } from "@/lib/staff/appointments";
@@ -168,7 +169,12 @@ export default function AdminDashboardPage() {
             {shop.isViewingToday ? "LIVE FLOOR" : `FLOOR · ${shop.viewDate}`}
           </span>
           <div className="mt-3 border border-ink-800 bg-ink-950">
-            <FloorBoard barbers={shop.barbers} appointments={shop.appointments} hours={shop.hours} />
+            <FloorBoard
+              barbers={shop.barbers}
+              appointments={shop.appointments}
+              hours={shop.hours}
+              offBarberIds={shop.offBarberIds}
+            />
           </div>
         </div>
 
@@ -202,6 +208,8 @@ export default function AdminDashboardPage() {
               {banned.length === 0 && <p className="px-4 py-6 text-sm text-ink-400">Nobody banned yet.</p>}
             </div>
           </div>
+
+          <TimeOffPanel barbers={shop.barbers} supabase={shop.supabase} onChange={shop.refresh} />
         </div>
       </section>
 

@@ -246,7 +246,12 @@ export default function CashierShopModePage() {
       <section className="px-4 pb-10 md:px-8">
         <span className="tag-number text-ink-400">EVERY CHAIR · 30 MIN</span>
         <div className="mt-3 border border-ink-800">
-          <FloorBoard barbers={shop.barbers} appointments={shop.appointments} hours={shop.hours} />
+          <FloorBoard
+            barbers={shop.barbers}
+            appointments={shop.appointments}
+            hours={shop.hours}
+            offBarberIds={shop.offBarberIds}
+          />
         </div>
       </section>
     </StaffShell>

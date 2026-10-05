@@ -259,6 +259,50 @@ export type Database = {
           },
         ]
       }
+      // Hand-added -- migration 0020_live_extend_barber_time_off.sql, not yet
+      // reflected in a regenerated CLI output.
+      barber_time_off: {
+        Row: {
+          barber_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          off_date: string
+          reason: string | null
+        }
+        Insert: {
+          barber_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          off_date: string
+          reason?: string | null
+        }
+        Update: {
+          barber_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          off_date?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "barber_time_off_barber_id_fkey"
+            columns: ["barber_id"]
+            isOneToOne: false
+            referencedRelation: "barbers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "barber_time_off_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_analytics: {
         Row: {
           appointment_id: string

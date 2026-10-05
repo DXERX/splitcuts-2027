@@ -76,6 +76,7 @@ export default function BarberSchedulePage() {
             confirmingNoShow={confirmingNoShow}
             onAdvance={(a) => void advance(a)}
             onNoShow={(a) => void markNoShow(a)}
+            offBarberIds={shop.offBarberIds}
           />
         </div>
       </section>
