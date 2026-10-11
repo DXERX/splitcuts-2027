@@ -50,10 +50,8 @@ export function homeRouteForRole(
       return "/admin";
 
     case "cashier":
-      return "/cashier";
-
     case "barber":
-      return "/barber";
+      return "/cashier";
 
     case "customer":
     default:

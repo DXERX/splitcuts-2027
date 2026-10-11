@@ -33,7 +33,7 @@ export default async function AccountPage() {
     { data: nextBookingRows },
     { data: completedAppointments },
     { data: rewards },
-    { data: progress },
+    { data: progressRows },
     { count: noShowCount },
     { data: packages },
     { data: myPackages },
@@ -54,11 +54,7 @@ export default async function AccountPage() {
         .eq("customer_id", user.id)
         .eq("status", "completed"),
       supabase.from("rewards").select("id").eq("customer_id", user.id).eq("status", "available"),
-      supabase
-        .from("customer_loyalty_progress")
-        .select("*")
-        .eq("customer_id", user.id)
-        .maybeSingle(),
+      supabase.from("customer_loyalty_progress").select("*").eq("customer_id", user.id),
       // Mirrors the count create_appointment() itself checks (migration 0010)
       // -- 1 shows a warning here, 2+ means the RPC is already refusing new
       // bookings from this account, so say so instead of a silent failure.
@@ -78,6 +74,14 @@ export default async function AccountPage() {
         .order("created_at", { ascending: false }),
     ]);
 
+  const progress = [...(progressRows ?? [])].sort((a, b) => {
+    const byVisits = (b.visits_progress ?? 0) - (a.visits_progress ?? 0);
+    if (byVisits !== 0) return byVisits;
+    if (a.branch_id == null && b.branch_id != null) return -1;
+    if (b.branch_id == null && a.branch_id != null) return 1;
+    return 0;
+  })[0];
+
   const nextBooking = (nextBookingRows as AppointmentJoin[] | null)?.[0] ?? null;
   const nextService = one(nextBooking?.services ?? null);
   const nextBarber = one(nextBooking?.barbers ?? null);
@@ -93,7 +97,7 @@ export default async function AccountPage() {
 
   const visitsCount = completedAppointments?.length ?? 0;
   const rewardsCount = rewards?.length ?? 0;
-  const firstName = profile?.full_name?.split(" ")[0]?.toUpperCase() ?? "THERE";
+  const firstName = profile?.full_name?.split(" ")[0] ?? "ضيف";
   const noShows = noShowCount ?? 0;
   const isBlocked = noShows >= 2;
 
@@ -116,10 +120,8 @@ export default async function AccountPage() {
   return (
     <main className="min-h-screen bg-ink pt-[var(--nav-height)] pb-24">
       <Container wide className="py-10 md:py-16">
-        <SectionLabel index="—" label="ACCOUNT" />
-        <h1 className="mt-4 font-display text-display-md uppercase text-paper">
-          WELCOME BACK, {firstName}.
-        </h1>
+        <SectionLabel index="—" label="حسابك" />
+        <h1 className="mt-4 font-display text-display-md text-paper">أهلًا {firstName}</h1>
 
         {noShows > 0 && (
           <div
@@ -142,7 +144,7 @@ export default async function AccountPage() {
 
         <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="hairline flex flex-col justify-between p-6 md:col-span-2">
-            <span className="tag-number text-ink-600">NEXT BOOKING</span>
+            <span className="font-sans text-sm font-semibold text-ink-200">الحجز الجاي</span>
             {nextBooking ? (
               <div className="mt-6 flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
                 <div>
@@ -150,8 +152,8 @@ export default async function AccountPage() {
                     {nextService?.name_en ?? "Service"}
                   </p>
                   <p className="mt-1 font-sans text-sm text-ink-400">
-                    with {nextBarber?.name || nextBarber?.nickname || "your barber"} ·{" "}
-                    {new Date(nextBooking.appointment_start).toLocaleString("en-US", {
+                    مع {nextBarber?.name || nextBarber?.nickname || "الحلاق"} ·{" "}
+                    {new Date(nextBooking.appointment_start).toLocaleString("ar-SA", {
                       weekday: "short",
                       month: "short",
                       day: "numeric",
@@ -168,46 +170,44 @@ export default async function AccountPage() {
                     href="/account/bookings"
                     className="font-sans text-xs font-semibold tracking-widest text-ink-400 hover:text-paper"
                   >
-                    MANAGE BOOKING →
+                    عدّل الحجز
                   </Link>
                 </div>
               </div>
             ) : (
               <div className="mt-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="font-sans text-sm text-ink-400">No upcoming bookings yet.</p>
+                <p className="font-sans text-sm text-ink-200">ما فيه حجز جاي.</p>
                 {isBlocked ? (
                   <span className="font-sans text-xs font-semibold tracking-widest text-red-400">
                     CALL THE SHOP TO BOOK
                   </span>
                 ) : (
                   <LinkButton href="/book" variant="primary" size="md">
-                    BOOK YOUR CHAIR
+                    احجز كرسي
                   </LinkButton>
                 )}
               </div>
             )}
           </div>
 
-          <Link href="/account/rewards">
-            <StatPanel
-              label="REWARDS"
-              value={
-                rewardsCount > 0
-                  ? `${rewardsCount} READY`
-                  : progress?.visits_required
-                    ? `${(progress.visits_progress ?? 0) % progress.visits_required}/${progress.visits_required}`
-                    : "—"
-              }
-              sub={rewardsCount > 0 ? "TAP TO REDEEM" : "VISITS TOWARD YOUR NEXT FREE CUT"}
-            />
+          <Link href="/account/rewards" className="hairline block p-6 md:col-span-2">
+            <span className="font-sans text-sm font-semibold text-ink-200">تتبع القصات</span>
+            <p className="mt-3 font-display text-4xl text-paper">
+              {rewardsCount > 0
+                ? "قصتك الجاية مجانًا"
+                : progress?.visits_required
+                  ? `${(progress.visits_progress ?? 0) % progress.visits_required} من ${progress.visits_required}`
+                  : "٠ من ٥"}
+            </p>
+            <p className="mt-2 font-sans text-sm text-ink-200">اضغط هنا عشان تشوف كل قصة ومتى تخلص الخمس.</p>
           </Link>
 
-          <StatPanel label="VISITS" value={String(visitsCount)} sub="COMPLETED APPOINTMENTS" />
+          <StatPanel label="القصات المخلّصة" value={String(visitsCount)} sub="كل زيارة اكتملت" />
 
-          <StatPanel label="FAVORITE BARBER" value={favoriteBarber} sub="MOST BOOKED" />
+          <StatPanel label="حلاقك المعتاد" value={favoriteBarber} sub="الأكثر حجزًا" />
 
           <Link href="/account/bookings">
-            <StatPanel label="BOOKING HISTORY" value="VIEW ALL" sub="UPCOMING / PAST / CANCELLED" />
+            <StatPanel label="حجوزاتي" value="كل الحجوزات" sub="الجاي والسابق والملغي" />
           </Link>
         </div>
 

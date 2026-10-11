@@ -49,40 +49,40 @@ export default async function RewardsPage() {
   return (
     <main className="min-h-screen bg-ink pt-[var(--nav-height)] pb-24">
       <Container wide className="py-10 md:py-16">
-        <SectionLabel index="—" label="SPLIT REWARDS" />
-        <h1 className="mt-4 font-display text-display-md uppercase text-paper">
-          {progress?.name ?? "MEMBERSHIP"}.
-        </h1>
+        <SectionLabel index="—" label="تتبع القصات" />
+        <h1 className="mt-4 font-display text-display-md text-paper">قصاتك</h1>
+        <p className="mt-3 max-w-xl font-sans text-base text-ink-200">
+          كل قصة شعر أو شعر مع لحية في يوم مختلف تحسب نقطة. خمس نقاط والسادسة علينا.
+        </p>
 
         <div className="mt-10 hairline p-6 md:p-10">
-          <span className="tag-number text-ink-600">YOUR PROGRESS</span>
+          <p className="font-display text-5xl text-paper sm:text-6xl">
+            {visitsProgress}
+            <span className="text-ink-400"> / {visitsRequired}</span>
+          </p>
           <div className="mt-6">
             <RewardDots total={visitsRequired} progress={visitsProgress} />
           </div>
 
           <div className="mt-8">
             {hasUnlockedReward ? (
-              <UnlockBanner label="FREE CUT UNLOCKED." />
+              <UnlockBanner label="قصتك الجاية مجانًا." />
             ) : remaining === 1 ? (
-              <p className="font-display text-xl uppercase text-paper">
-                ONE MORE CUT. NEXT ONE'S ON US.
-              </p>
+              <p className="font-display text-2xl text-paper">باقي قصة واحدة والجاية علينا.</p>
             ) : (
-              <p className="font-sans text-sm text-ink-400">
-                {remaining} more visit{remaining === 1 ? "" : "s"} until your next free cut.
-              </p>
+              <p className="font-sans text-lg text-ink-200">باقي {remaining} قصات وتفتح القصة المجانية.</p>
             )}
           </div>
 
           {hasUnlockedReward && (
             <LinkButton href="/book" variant="chrome" size="lg" className="mt-8">
-              BOOK YOUR FREE CUT
+              احجز القصة المجانية
             </LinkButton>
           )}
         </div>
 
         <div className="mt-16">
-          <SectionLabel index="—" label="HISTORY" />
+          <SectionLabel index="—" label="سجل القصات" />
           <div className="mt-6 hairline divide-y divide-ink-800">
             {(transactions ?? []).map((t) => (
               <div key={t.id} className="flex items-center justify-between px-6 py-4">
@@ -91,7 +91,7 @@ export default async function RewardsPage() {
                     {t.reason ?? (t.type === "credit" ? "Visit credited" : t.type)}
                   </p>
                   <p className="mt-0.5 font-sans text-xs text-ink-400">
-                    {new Date(t.created_at).toLocaleDateString("en-US", {
+                    {new Date(t.created_at).toLocaleDateString("ar-SA", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
@@ -106,7 +106,7 @@ export default async function RewardsPage() {
             ))}
             {(transactions ?? []).length === 0 && (
               <p className="px-6 py-6 font-sans text-sm text-ink-400">
-                Your rewards history will show up here after your first visit.
+                بعد أول قصة تخلص في المحل، بتظهر هنا.
               </p>
             )}
           </div>

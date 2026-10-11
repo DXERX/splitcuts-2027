@@ -6,9 +6,8 @@ import clsx from "clsx";
 import { BrandMark } from "@/components/ui/BrandMark";
 
 const LINKS = [
+  { href: "/cashier", label: "FLOOR" },
   { href: "/admin", label: "OWNER" },
-  { href: "/cashier", label: "CASHIER" },
-  { href: "/barber", label: "FLOOR" },
 ];
 
 export function StaffShell({
@@ -23,7 +22,7 @@ export function StaffShell({
   const pathname = usePathname();
 
   return (
-    <main className="min-h-screen bg-ink font-sans text-paper">
+    <main dir="ltr" lang="en" className="min-h-screen bg-ink font-sans text-paper">
       <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink/95 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 md:px-8">
           <div className="flex items-center gap-4">
@@ -37,7 +36,9 @@ export function StaffShell({
                 href={l.href}
                 className={clsx(
                   "px-3 py-2 font-sans text-[11px] font-semibold tracking-widest",
-                  pathname === l.href ? "bg-paper text-ink" : "text-ink-200 hover:text-paper",
+                  pathname === l.href || (l.href === "/cashier" && pathname === "/barber")
+                    ? "bg-paper text-ink"
+                    : "text-ink-200 hover:text-paper",
                 )}
               >
                 {l.label}

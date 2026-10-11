@@ -556,7 +556,7 @@ export function BookingFlow({
               {tamaraEligible && !(usePackageRedemption && packageEligible) && (
                 <TamaraInstallmentWidget amount={tamaraChargeTotal(totalPrice)} />
               )}
-              <div className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-ink-800 bg-ink/95 px-4 pt-3 backdrop-blur md:static md:mt-0 md:border-0 md:bg-transparent md:p-0" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+              <div className="fixed inset-x-0 z-30 flex items-center justify-between gap-3 border-t border-ink-800 bg-ink/95 px-4 py-3 backdrop-blur md:static md:mt-0 md:border-0 md:bg-transparent md:p-0" style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom))" }}>
                 <span className="font-sans text-sm text-ink-200">
                   {t("booking.selected", { count: selectedServices.length })}
                   {" · "}

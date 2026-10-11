@@ -5,10 +5,11 @@
 import type { DictKey } from "./en";
 
 export const ar: Record<DictKey, string> = {
-  "nav.rewards": "المكافآت",
+  "nav.rewards": "قصاتي",
   "nav.account": "حسابي",
   "nav.book": "← احجز",
-  "nav.bookFull": "احجز كرسيك",
+  "nav.bookFull": "احجز",
+  "nav.signIn": "دخول",
   "nav.langToggle": "EN",
 
   "hero.eyebrow": "سبليت كتس / 2026",
@@ -51,7 +52,7 @@ export const ar: Record<DictKey, string> = {
   "rewards.tag": "مكافآت سبليت",
   "rewards.headline": "٥ قصات، والسادسة علينا.",
   "rewards.free": "مجانًا",
-  "rewards.view": "← عرض المكافآت",
+  "rewards.view": "شوف قصاتي",
 
   "bottomNav.book": "← احجز كرسيك",
 

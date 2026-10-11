@@ -4,10 +4,11 @@
 // nesting at runtime, just a flat Record<string, string>.
 
 export const en = {
-  "nav.rewards": "REWARDS",
+  "nav.rewards": "MY CUTS",
   "nav.account": "ACCOUNT",
   "nav.book": "BOOK →",
-  "nav.bookFull": "BOOK YOUR CHAIR",
+  "nav.bookFull": "BOOK",
+  "nav.signIn": "SIGN IN",
   "nav.langToggle": "عربي",
 
   "hero.eyebrow": "SPLIT CUTS / 2026",
@@ -50,7 +51,7 @@ export const en = {
   "rewards.tag": "SPLIT REWARDS",
   "rewards.headline": "5 CUTS. 6TH ON US.",
   "rewards.free": "FREE",
-  "rewards.view": "VIEW REWARDS →",
+  "rewards.view": "SEE MY CUTS",
 
   "bottomNav.book": "BOOK A CHAIR →",
 

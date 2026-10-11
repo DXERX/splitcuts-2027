@@ -82,6 +82,12 @@ export function Hero() {
           >
             {t("hero.cta")}
           </Link>
+          <Link
+            href="/account/rewards"
+            className="inline-flex items-center border border-paper px-8 py-4 font-sans text-sm font-semibold tracking-widest text-paper"
+          >
+            {t("nav.rewards")}
+          </Link>
           <SkaterSprite className="cursor-pointer" />
         </motion.div>
       </div>

@@ -29,7 +29,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 function readStoredLocale(): Locale {
   if (typeof window === "undefined") return "en";
   try {
-    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === "ar" ? "ar" : "en";
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === "en" ? "en" : "ar";
   } catch {
     return "en";
   }
@@ -50,7 +50,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Starts "en" for a consistent server render, then syncs to whatever the
   // pre-hydration script already applied to <html> (see app/layout.tsx) so
   // there's no visible flip immediately after hydration either.
-  const [locale, setLocaleState] = useState<Locale>("en");
+  const [locale, setLocaleState] = useState<Locale>("ar");
 
   useEffect(() => {
     setLocaleState(readStoredLocale());

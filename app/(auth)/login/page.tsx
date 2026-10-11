@@ -8,6 +8,7 @@ import { ConcretePanel } from "@/components/ui/ConcretePanel";
 import { Button } from "@/components/ui/Button";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { toE164Saudi } from "@/lib/phone";
+import { homeRouteForRole, isStaffRole, type AppRole } from "@/lib/roles";
 
 type Stage = "enter_email" | "enter_code" | "enter_phone";
 
@@ -66,16 +67,23 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("phone")
+      .select("phone, role")
       .eq("id", user.id)
       .maybeSingle();
+
+    const role = profile?.role as AppRole | undefined;
+    if (isStaffRole(role)) {
+      router.replace(homeRouteForRole(role));
+      router.refresh();
+      return;
+    }
 
     if (!profile?.phone) {
       setStage("enter_phone");
       return;
     }
 
-    router.replace("/");
+    router.replace("/account/rewards");
     router.refresh();
   }
 
@@ -99,7 +107,7 @@ export default function LoginPage() {
     }
 
     setLoading(false);
-    router.replace("/");
+    router.replace("/account/rewards");
     router.refresh();
   }
 
@@ -114,12 +122,8 @@ export default function LoginPage() {
             <BrandMark className="h-7 w-auto md:h-8" />
           </Link>
           <div className="max-w-sm">
-            <p className="font-display text-3xl uppercase leading-tight text-paper">
-              Cut Different.
-            </p>
-            <p className="mt-3 font-sans text-sm text-ink-200">
-              Every chair, one standard. Sign in to manage your bookings and rewards.
-            </p>
+            <p className="font-display text-3xl leading-tight text-paper">قصة مختلفة.</p>
+            <p className="mt-3 font-sans text-sm text-ink-200">سجّل عشان تتابع قصاتك وتحجز كرسيك.</p>
           </div>
         </div>
       </div>
@@ -130,10 +134,8 @@ export default function LoginPage() {
           <BrandMark />
         </Link>
 
-        <h1 className="font-display text-display-md uppercase text-paper">WELCOME BACK.</h1>
-        <p className="mt-2 font-sans text-sm text-ink-400">
-          Sign in to book, track visits, and unlock rewards.
-        </p>
+        <h1 className="font-display text-display-md text-paper">ادخل حسابك</h1>
+        <p className="mt-2 font-sans text-base text-ink-200">ثلاث خطوات: الإيميل، الرمز، رقم الجوال. بعدها تشوف قصاتك.</p>
 
         <div className="mt-10">
           {stage === "enter_email" && (
@@ -145,19 +147,21 @@ export default function LoginPage() {
               }}
             >
               <div>
-                <label className="tag-number text-ink-600">EMAIL</label>
+                <label className="font-sans text-sm font-semibold text-ink-200">١ · الإيميل</label>
                 <input
                   type="email"
+                  inputMode="email"
+                  autoComplete="email"
                   autoFocus
                   required
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="hairline mt-2 w-full bg-transparent px-4 py-3 font-sans text-sm text-paper outline-none placeholder:text-ink-600"
+                  className="hairline mt-2 w-full bg-transparent px-4 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600"
                 />
               </div>
               <Button disabled={loading} variant="primary" size="lg">
-                {loading ? "SENDING…" : "SEND CODE"}
+                {loading ? "نرسل الرمز…" : "أرسل الرمز"}
               </Button>
             </form>
           )}
@@ -170,9 +174,9 @@ export default function LoginPage() {
                 void verifyCode();
               }}
             >
-              <p className="font-sans text-sm text-ink-400">Enter the code we emailed to {email}</p>
+              <p className="font-sans text-base text-ink-200">٢ · اكتب الرمز اللي وصل على {email}</p>
               <div>
-                <label className="tag-number text-ink-600">CODE</label>
+                <label className="font-sans text-sm font-semibold text-ink-200">الرمز</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -185,7 +189,7 @@ export default function LoginPage() {
                 />
               </div>
               <Button disabled={loading} variant="primary" size="lg">
-                {loading ? "VERIFYING…" : "VERIFY & CONTINUE"}
+                {loading ? "نتحقق…" : "دخول"}
               </Button>
               <button
                 type="button"
@@ -196,7 +200,7 @@ export default function LoginPage() {
                 }}
                 className="font-sans text-xs tracking-widest text-ink-400 hover:text-paper"
               >
-                WRONG EMAIL? GO BACK
+                إيميل غلط؟ ارجع
               </button>
             </form>
           )}
@@ -209,12 +213,11 @@ export default function LoginPage() {
                 void savePhoneAndFinish();
               }}
             >
-              <p className="font-sans text-sm text-ink-400">
-                One more thing -- what's your number? We use it to book your chair and track your
-                free-cut progress.
+              <p className="font-sans text-base text-ink-200">
+                ٣ · رقم الجوال. نستخدمه عشان نربط حجوزاتك وقصاتك بحسابك.
               </p>
               <div>
-                <label className="tag-number text-ink-600">PHONE</label>
+                <label className="font-sans text-sm font-semibold text-ink-200">الجوال</label>
                 <div className="hairline mt-2 flex items-center">
                   <span className="border-r border-ink-800 px-4 py-3 font-sans text-sm text-ink-400">
                     +966
@@ -226,12 +229,12 @@ export default function LoginPage() {
                     placeholder="5X XXX XXXX"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="flex-1 bg-transparent px-4 py-3 font-sans text-sm text-paper outline-none placeholder:text-ink-600"
+                    className="flex-1 bg-transparent px-4 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600"
                   />
                 </div>
               </div>
               <Button disabled={loading} variant="primary" size="lg">
-                {loading ? "SAVING…" : "FINISH →"}
+                {loading ? "نحفظ…" : "ورّني قصاتي"}
               </Button>
             </form>
           )}

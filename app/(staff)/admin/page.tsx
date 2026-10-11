@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import Link from "next/link";
 import { StaffShell } from "@/components/staff/StaffShell";
-import { FloorBoard } from "@/components/staff/FloorBoard";
 import { StaffDatePicker } from "@/components/staff/StaffDatePicker";
 import { StatusFilterChips } from "@/components/staff/StatusFilterChips";
 import { TodayOffPanel } from "@/components/staff/TimeOffPanel";
@@ -110,18 +110,18 @@ export default function AdminDashboardPage() {
   const branchName = shop.branches.map((b) => b.name).join(" · ") || "No branch";
 
   return (
-    <StaffShell title={shop.role === "manager" ? "BRANCH" : "OWNER"} meta={branchName}>
+    <StaffShell title="OWNER" meta={branchName}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">
         <StaffDatePicker value={shop.viewDate} today={shop.businessDate} onChange={shop.setViewDate} />
-        {(shop.boardLoading || statsLoading) && (
-          <span className="font-sans text-[10px] font-semibold tracking-widest text-ink-400">LOADING…</span>
-        )}
+        <Link href="/cashier" className="bg-paper px-5 py-3 font-sans text-sm font-semibold text-ink">
+          OPEN FLOOR
+        </Link>
       </div>
 
-      <section className="grid grid-cols-2 gap-px bg-ink-800 md:grid-cols-4 xl:grid-cols-8">
+      <section className="grid grid-cols-2 gap-px bg-ink-800 md:grid-cols-4">
         {[
           [shop.isViewingToday ? "TODAY" : shop.viewDate, today.filter((a) => a.status !== "cancelled").length],
-          ["COMPLETED", completedToday.length],
+          ["DONE", completedToday.length],
           ["NO SHOWS", noShowsToday.length],
           ["BANNED", banned.length],
           [shop.isViewingToday ? "REVENUE TODAY" : "REVENUE (DAY)", `${revenueToday} SAR`],
@@ -140,39 +140,27 @@ export default function AdminDashboardPage() {
         <p className="px-6 py-3 font-sans text-sm text-red-400">{shop.error || statsError}</p>
       )}
 
-      <section className="grid gap-6 px-4 py-8 md:px-8 lg:grid-cols-[1fr_320px]">
-        <div>
-          <span className="tag-number text-ink-400">
-            {shop.isViewingToday ? "LIVE FLOOR" : `FLOOR · ${shop.viewDate}`}
-          </span>
-          <div className="mt-3 border border-ink-800 bg-ink-950">
-            <FloorBoard
-              barbers={shop.barbers}
-              appointments={shop.appointments}
-              hours={shop.hours}
-              offBarberIds={shop.offBarberIds}
-            />
-          </div>
-        </div>
-
+      <section className="grid gap-6 px-4 py-8 md:px-8 lg:grid-cols-2">
         <div className="space-y-6">
           <div>
-            <span className="tag-number text-ink-400">PER BARBER · {shop.isViewingToday ? "TODAY" : shop.viewDate}</span>
+            <span className="font-sans text-sm font-semibold text-ink-200">
+              PER BARBER · {shop.isViewingToday ? "TODAY" : shop.viewDate}
+            </span>
             <div className="mt-3 divide-y divide-ink-800 border border-ink-800">
               {byBarber.map((b) => (
                 <div key={b.id} className="px-4 py-3">
                   <p className="font-sans text-sm text-paper">{b.name}</p>
                   <p className="mt-1 font-sans text-xs text-ink-400">
-                    {b.total} booked · {b.live} live · {b.done} done · {b.revenue} SAR
+                    {b.total} booked · {b.live} in chair · {b.done} done · {b.revenue} SAR
                   </p>
                 </div>
               ))}
-              {byBarber.length === 0 && <p className="px-4 py-6 text-sm text-ink-400">No barbers loaded.</p>}
+              {byBarber.length === 0 && <p className="px-4 py-6 text-sm text-ink-400">No barbers.</p>}
             </div>
           </div>
 
           <div>
-            <span className="tag-number text-ink-400">BANNED (2+ NO SHOWS)</span>
+            <span className="font-sans text-sm font-semibold text-ink-200">BANNED FROM ONLINE BOOKING</span>
             <div className="mt-3 divide-y divide-ink-800 border border-ink-800">
               {banned.map((b) => (
                 <div key={b.key} className="px-4 py-3">
@@ -182,7 +170,7 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
               ))}
-              {banned.length === 0 && <p className="px-4 py-6 text-sm text-ink-400">Nobody banned yet.</p>}
+              {banned.length === 0 && <p className="px-4 py-6 text-sm text-ink-400">Nobody banned.</p>}
             </div>
           </div>
 
@@ -197,7 +185,7 @@ export default function AdminDashboardPage() {
 
       <section className="px-4 pb-12 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="tag-number text-ink-400">RECENT ACTIVITY</span>
+          <span className="font-sans text-sm font-semibold text-ink-200">RECENT BOOKINGS</span>
           <StatusFilterChips value={recentStatus} onChange={setRecentStatus} statuses={RECENT_STATUSES} />
         </div>
         <div className="mt-3 divide-y divide-ink-800 border border-ink-800">
@@ -220,7 +208,7 @@ export default function AdminDashboardPage() {
           ))}
           {recent.length === 0 && (
             <p className="px-5 py-8 text-sm text-ink-400">
-              {recentStatus === "all" ? "No appointments yet." : "Nothing with that status yet."}
+              {recentStatus === "all" ? "No appointments." : "Nothing with that status."}
             </p>
           )}
         </div>

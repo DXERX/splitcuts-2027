@@ -85,11 +85,11 @@ export const dynamic = "force-dynamic";
 // runs outside React entirely.
 const SET_LOCALE_BEFORE_PAINT = `(function(){try{var l=localStorage.getItem(${JSON.stringify(
   LOCALE_STORAGE_KEY,
-)});if(l==="ar"){document.documentElement.lang="ar";document.documentElement.dir="rtl";}}catch(e){}})();`;
+)});if(l==="en"){document.documentElement.lang="en";document.documentElement.dir="ltr";}else{document.documentElement.lang="ar";document.documentElement.dir="rtl";}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${interfaceFont.variable} ${arabic.variable}`}>
+    <html lang="ar" dir="rtl" className={`${display.variable} ${interfaceFont.variable} ${arabic.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: SET_LOCALE_BEFORE_PAINT }} />
       </head>

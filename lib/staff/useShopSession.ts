@@ -34,6 +34,7 @@ export function useShopSession() {
   const [loading, setLoading] = useState(true);
   const [boardLoading, setBoardLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const businessDate = businessDateString(hours);
 
@@ -46,9 +47,21 @@ export function useShopSession() {
   const userPickedDateRef = useRef(false);
   const viewDateRef = useRef(viewDate);
   const loadedDayRef = useRef<string | null>(null);
+  const barbersRef = useRef(barbers);
+  const servicesRef = useRef(services);
+  const branchRef = useRef(branchId);
   useEffect(() => {
     viewDateRef.current = viewDate;
   }, [viewDate]);
+  useEffect(() => {
+    barbersRef.current = barbers;
+  }, [barbers]);
+  useEffect(() => {
+    servicesRef.current = services;
+  }, [services]);
+  useEffect(() => {
+    branchRef.current = branchId;
+  }, [branchId]);
 
   const loadBoard = useCallback(
     async (resolvedBranchId: string | null, day: string, barberRows: Barber[], serviceRows: Service[]) => {
@@ -83,6 +96,7 @@ export function useShopSession() {
       }
       setError(null);
       loadedDayRef.current = day;
+      setLastSyncedAt(new Date());
       setAppointments(hydrateAppointments((data ?? []) as LiveAppointment[], barberRows, serviceRows));
       setOffBarberIds(new Set((offResult.data ?? []).map((r) => r.barber_id)));
     },
@@ -187,13 +201,39 @@ export function useShopSession() {
     branchId,
     onNewAppointment: (appointment) => {
       if (appointment.appointment_date !== viewDateRef.current) return;
-      setAppointments((prev) => mergeLiveAppointment(prev, appointment, barbers, services));
+      setAppointments((prev) =>
+        mergeLiveAppointment(prev, appointment, barbersRef.current, servicesRef.current),
+      );
+      setLastSyncedAt(new Date());
     },
     onAppointmentUpdate: (appointment) => {
       if (appointment.appointment_date !== viewDateRef.current) return;
-      setAppointments((prev) => mergeLiveAppointment(prev, appointment, barbers, services));
+      setAppointments((prev) =>
+        mergeLiveAppointment(prev, appointment, barbersRef.current, servicesRef.current),
+      );
+      setLastSyncedAt(new Date());
     },
   });
+
+  // The websocket is not enough on the shop tablet: a filtered realtime
+  // event is dropped unless the table is published with a full replica
+  // identity, and a asleep iPad drops the socket. A short visible-tab
+  // refresh keeps every chair on the same screen without a manual reload.
+  useEffect(() => {
+    if (loading) return;
+    const pull = () => {
+      if (document.visibilityState === "hidden") return;
+      void loadBoard(branchRef.current, viewDateRef.current, barbersRef.current, servicesRef.current);
+    };
+    const timer = window.setInterval(pull, 4000);
+    document.addEventListener("visibilitychange", pull);
+    window.addEventListener("focus", pull);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", pull);
+      window.removeEventListener("focus", pull);
+    };
+  }, [loading, loadBoard]);
 
   const setViewDate = useCallback((date: string) => {
     userPickedDateRef.current = true;
@@ -222,6 +262,7 @@ export function useShopSession() {
     loading,
     boardLoading,
     error,
+    lastSyncedAt,
     refresh,
   };
 }

@@ -12,7 +12,11 @@ import { LanguageToggle } from "@/components/i18n/LanguageToggle";
 
 // Deliberately minimal -- not a normal website nav. Everything else
 // (services, barbers, location) lives inline on the homepage itself.
-const LINKS = [{ href: "/account/rewards", labelKey: "nav.rewards" as const }];
+const LINKS = [
+  { href: "/book", labelKey: "nav.bookFull" as const },
+  { href: "/account/rewards", labelKey: "nav.rewards" as const },
+  { href: "/account", labelKey: "nav.account" as const },
+];
 
 export function GlobalNav() {
   const pathname = usePathname();
@@ -57,7 +61,7 @@ export function GlobalNav() {
             <BrandMark />
           </Link>
 
-          <nav className="hidden items-center gap-8 lg:flex">
+          <nav className="hidden items-center gap-6 md:flex">
             {LINKS.map((l) => (
               <Link
                 key={l.href}
@@ -69,19 +73,21 @@ export function GlobalNav() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-3 lg:flex">
+          <div className="hidden items-center gap-3 md:flex">
             <LanguageToggle />
-            <Link
-              href={authed ? "/account" : "/book"}
-              className="inline-flex items-center rounded-xs border border-paper px-6 py-3 font-sans text-xs font-semibold tracking-widest text-paper transition-colors duration-400 ease-editorial hover:bg-paper hover:text-ink"
-            >
-              {authed ? t("nav.account") : t("nav.book")}
-            </Link>
+            {!authed && (
+              <Link
+                href="/login"
+                className="inline-flex items-center rounded-xs border border-paper px-6 py-3 font-sans text-xs font-semibold tracking-widest text-paper transition-colors duration-400 ease-editorial hover:bg-paper hover:text-ink"
+              >
+                {t("nav.signIn")}
+              </Link>
+            )}
           </div>
 
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="flex flex-col items-end gap-[5px] lg:hidden"
+            className="flex flex-col items-end gap-[5px] md:hidden"
             aria-label="Menu"
             aria-expanded={menuOpen}
           >
@@ -108,7 +114,7 @@ export function GlobalNav() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-40 flex flex-col justify-center bg-ink px-8 lg:hidden"
+            className="fixed inset-0 z-40 flex flex-col justify-center bg-ink px-8 md:hidden"
           >
             <nav className="flex flex-col gap-6">
               {LINKS.map((l, i) => (
@@ -126,10 +132,10 @@ export function GlobalNav() {
             </nav>
             <div className="mt-10 flex flex-wrap items-center gap-4">
               <Link
-                href={authed ? "/account" : "/book"}
+                href={authed ? "/account/rewards" : "/login"}
                 className="inline-flex items-center rounded-xs bg-paper px-8 py-4 font-sans text-sm font-semibold tracking-widest text-ink"
               >
-                {authed ? t("nav.account") : t("nav.bookFull")}
+                {authed ? t("nav.rewards") : t("nav.signIn")}
               </Link>
               <LanguageToggle />
             </div>
