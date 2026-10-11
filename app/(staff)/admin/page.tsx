@@ -15,6 +15,7 @@ import { RecentLoyalty } from "@/components/staff/RecentLoyalty";
 import { loadBranchDashboard, type BannedRow, type RecentAppointment } from "@/lib/staff/dashboardStats";
 import type { AppointmentStatus } from "@/lib/database.types";
 import { formatSlotLabel, shiftDate, slotTime } from "@/lib/timeSlots";
+import { useBookingFlags } from "@/lib/staff/useBookingFlags";
 
 const RECENT_STATUSES: AppointmentStatus[] = [
   "booked",
@@ -31,6 +32,7 @@ export default function AdminDashboardPage() {
   const [weekBookings, setWeekBookings] = useState(0);
   const [banned, setBanned] = useState<BannedRow[]>([]);
   const [recent, setRecent] = useState<RecentAppointment[]>([]);
+  const flags = useBookingFlags(recent.map((row) => row.id));
   const [recentStatus, setRecentStatus] = useState<AppointmentStatus | "all">("all");
   const [statsError, setStatsError] = useState<string | null>(null);
   const [unbanPhone, setUnbanPhone] = useState("");
@@ -265,6 +267,8 @@ export default function AdminDashboardPage() {
                   {shop.barbers.find((b) => b.id === a.barber_id)?.name ?? a.barber_id.slice(0, 8)}
                   {a.total_price != null ? ` · ${a.total_price} SAR` : ""}
                   {a.customer_phone ? ` · ${a.customer_phone}` : ""}
+                  {flags[a.id]?.tamaraPaid ? " · PAID TAMARA" : ""}
+                  {flags[a.id]?.freeCut ? " · FREE CUT" : ""}
                 </p>
               </div>
               <span className={clsx("font-sans text-[10px] font-semibold tracking-widest", STATUS_STYLE[a.status])}>

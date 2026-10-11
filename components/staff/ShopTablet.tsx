@@ -7,6 +7,7 @@ import { TodayOffPanel } from "@/components/staff/TimeOffPanel";
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { mergeLiveAppointment, type LiveAppointment } from "@/lib/staff/appointments";
 import { extendedMinutes, formatSlotLabel, slotTime } from "@/lib/timeSlots";
+import { useBookingFlags } from "@/lib/staff/useBookingFlags";
 import type { AppointmentStatus } from "@/lib/database.types";
 
 const STATUS_LABEL: Record<AppointmentStatus, string> = {
@@ -39,6 +40,7 @@ function sortByTime(rows: LiveAppointment[], hours: { default_start: string; def
 
 export function ShopTablet() {
   const shop = useShopSession();
+  const flags = useBookingFlags(shop.appointments.map((row) => row.id));
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmNoShow, setConfirmNoShow] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -220,6 +222,13 @@ export function ShopTablet() {
                           {row.service_name || "Service"}
                           {row.customer_phone ? ` · ${row.customer_phone}` : ""}
                         </p>
+                        {(flags[row.id]?.freeCut || flags[row.id]?.tamaraPaid) && (
+                          <p className="mt-1 font-sans text-xs font-semibold text-paper">
+                            {flags[row.id]?.freeCut ? "FREE CUT" : ""}
+                            {flags[row.id]?.freeCut && flags[row.id]?.tamaraPaid ? " · " : ""}
+                            {flags[row.id]?.tamaraPaid ? "PAID TAMARA" : ""}
+                          </p>
+                        )}
                       </div>
                       <span className="shrink-0 font-sans text-xs font-semibold text-ink-200">
                         {STATUS_LABEL[row.status]}

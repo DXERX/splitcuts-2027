@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
+import { fetchBookingFlags } from "@/lib/staff/useBookingFlags";
 
 type Client = SupabaseClient<Database>;
 
@@ -91,6 +92,37 @@ function earnsPoint(service: { name_en: string | null; category: string | null; 
   return service.category == null && !(name === "Hair" && Number(service.price ?? 0) >= 90);
 }
 
+async function withLedger(cuts: CutRow[]): Promise<{ cuts: CutRow[]; checked: boolean }> {
+  const flags = await fetchBookingFlags(cuts.map((cut) => cut.id));
+  if (!flags) return { cuts, checked: false };
+  return {
+    checked: true,
+    cuts: cuts.map((cut) => {
+      const flag = flags[cut.id];
+      if (!flag) return { ...cut, checked: true };
+      return {
+        ...cut,
+        eligible: flag.eligible,
+        point_recorded: flag.pointRecorded,
+        reward_used: flag.rewardUsed,
+        checked: true,
+      };
+    }),
+  };
+}
+
+type PhoneHit = {
+  id: string | null;
+  name: string;
+  phone: string | null;
+  hasAccount: boolean;
+  points: number;
+  required: number;
+  cycle: number;
+  freeCutReady: boolean;
+  cuts: { date: string; service: string; eligible: boolean; pointRecorded: boolean }[];
+};
+
 function explainError(message: string, role: string | null): string {
   if (/FORBIDDEN/i.test(message)) {
     if (role === "owner" || role === "manager") {
@@ -121,6 +153,10 @@ export function RecentLoyalty({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [partial, setPartial] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [hits, setHits] = useState<PhoneHit[] | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
 
   const load = useCallback(async () => {
     const { data, error: loadError } = await supabase.rpc("recent_loyalty_report", {
@@ -128,9 +164,10 @@ export function RecentLoyalty({
     });
     if (!loadError && data) {
       const report = readReport(data);
+      const flagged = await withLedger(report.cuts);
       setError(null);
       setPartial(false);
-      setCuts(report.cuts);
+      setCuts(flagged.cuts);
       setSignups(report.signups);
       return;
     }
@@ -164,8 +201,7 @@ export function RecentLoyalty({
     const saved = new Set((ledger ?? []).filter((row) => row.type === "visit_earned").map((row) => row.appointment_id));
     const freed = new Set((ledger ?? []).filter((row) => row.type === "reward_redeemed").map((row) => row.appointment_id));
 
-    setPartial(true);
-    setCuts((rows ?? []).map((row) => {
+    const flagged = await withLedger((rows ?? []).map((row) => {
       const service = Array.isArray(row.services) ? row.services[0] : row.services;
       return {
         id: row.id,
@@ -180,49 +216,68 @@ export function RecentLoyalty({
         customer_id: row.customer_id,
       };
     }));
+    setPartial(!flagged.checked);
+    setCuts(flagged.cuts);
     setSignups([]);
-    setError(canCheck ? null : "Completed cuts are listed. This login cannot read who already has a point. Run SQL file 0028, then refresh.");
+    setError(flagged.checked || canCheck ? null : "Completed cuts are listed. Point status could not be read.");
   }, [branchId, role, supabase]);
+
+  async function recordOnServer() {
+    const response = await fetch("/api/staff/loyalty", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordMissing: true }),
+    });
+    const body = (await response.json().catch(() => null)) as { linked?: number; visits?: number; rewards?: number; error?: string } | null;
+    if (!response.ok || !body || body.error) return null;
+    return body;
+  }
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     void (async () => {
-      const { data, error: fillError } = await supabase.rpc("backfill_recent_loyalty", { p_days: 14 });
+      const saved = await recordOnServer();
       if (cancelled) return;
-      if (!fillError) {
-        const result = asObject(data);
-        const visits = Number(result?.visits_added ?? 0);
-        const rewards = Number(result?.rewards_added ?? 0);
-        const linked = Number(result?.linked ?? 0);
-        if (visits > 0 || rewards > 0 || linked > 0) {
-          setNote(`Linked ${linked} bookings · added ${visits} points · ${rewards} rewards.`);
-        }
+      if (saved && ((saved.visits ?? 0) > 0 || (saved.rewards ?? 0) > 0 || (saved.linked ?? 0) > 0)) {
+        setNote(`Linked ${saved.linked ?? 0} bookings · added ${saved.visits ?? 0} points · ${saved.rewards ?? 0} rewards.`);
       }
       await load();
     })();
     return () => {
       cancelled = true;
     };
-  }, [enabled, load, supabase]);
+  }, [enabled, load]);
 
   async function recordMissing() {
     setBusy(true);
     setNote(null);
-    const { data, error: fillError } = await supabase.rpc("backfill_recent_loyalty", { p_days: 14 });
+    const saved = await recordOnServer();
     setBusy(false);
-    if (fillError) {
-      setError(explainError(fillError.message, role));
+    if (!saved) {
+      setError("Could not record the missing points.");
       return;
     }
-    const result = asObject(data);
-    setNote(
-      `Linked ${Number(result?.linked ?? 0)} bookings · added ${Number(result?.visits_added ?? 0)} points · ${Number(result?.rewards_added ?? 0)} rewards.`,
-    );
+    setNote(`Linked ${saved.linked ?? 0} bookings · added ${saved.visits ?? 0} points · ${saved.rewards ?? 0} rewards.`);
     await load();
   }
 
   const missing = cuts.filter((cut) => cut.checked && cut.eligible && !cut.point_recorded && !cut.reward_used).length;
+
+  async function findPhone(event: FormEvent) {
+    event.preventDefault();
+    setLookupBusy(true);
+    setLookupError(null);
+    const response = await fetch(`/api/staff/loyalty?phone=${encodeURIComponent(phone.trim())}`);
+    const body = (await response.json().catch(() => null)) as { customers?: PhoneHit[]; error?: string } | null;
+    setLookupBusy(false);
+    if (!response.ok || !body?.customers) {
+      setHits(null);
+      setLookupError(body?.error === "PHONE_REQUIRED" ? "Enter the full phone number." : "Could not look up that number.");
+      return;
+    }
+    setHits(body.customers);
+  }
 
   return (
     <section className="px-4 pb-8 md:px-8">
@@ -237,9 +292,47 @@ export function RecentLoyalty({
           {busy ? "RECORDING…" : "RECORD MISSING POINTS"}
         </button>
       </div>
+      <form className="mt-3 flex gap-2" onSubmit={(event) => void findPhone(event)}>
+        <input
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+          placeholder="Phone number"
+          className="hairline min-w-0 flex-1 bg-transparent px-3 py-2 font-sans text-sm text-paper outline-none placeholder:text-ink-600"
+        />
+        <button
+          type="submit"
+          disabled={lookupBusy || phone.trim().length < 9}
+          className="bg-paper px-4 py-2 font-sans text-xs font-semibold text-ink disabled:opacity-40"
+        >
+          {lookupBusy ? "SEARCHING…" : "FIND POINTS"}
+        </button>
+      </form>
+      {lookupError && <p className="mt-2 font-sans text-xs text-red-400">{lookupError}</p>}
+      {hits?.map((hit) => (
+        <div key={hit.id ?? hit.phone ?? hit.name} className="mt-3 border border-ink-800 px-4 py-3">
+          <p className="font-sans text-sm text-paper">
+            {hit.name}
+            {hit.phone ? ` · ${hit.phone}` : ""}
+          </p>
+          <p className="mt-1 font-sans text-sm text-ink-200">
+            {hit.hasAccount
+              ? `${hit.cycle} / ${hit.required} points${hit.freeCutReady ? " · FREE CUT READY" : ""}`
+              : "No account on this number, so no points can be saved."}
+          </p>
+          {hit.cuts.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {hit.cuts.map((cut) => (
+                <p key={`${hit.id}-${cut.date}-${cut.service}`} className="font-sans text-xs text-ink-400">
+                  {cut.date} · {cut.service} · {cut.eligible ? (cut.pointRecorded ? "POINT SAVED" : "NO POINT") : "NOT A CUT POINT"}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
       <p className="mt-2 font-sans text-xs text-ink-400">
-        Only Hair and Hair + Beard earn a point, once a day. Five points unlock a free cut.
-        That next cut uses the reward and the count goes back to 0.
+        Done means the haircut happened. A point is saved only for Hair and Hair + Beard, once a day.
+        Five points unlock a free cut. That next cut is free and the count goes back to 0.
         {partial
           ? ""
           : missing === 0
