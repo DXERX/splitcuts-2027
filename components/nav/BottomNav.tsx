@@ -10,10 +10,10 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 export function BottomNav() {
   const { t } = useLanguage();
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 md:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] md:hidden">
       <Link
         href="/book"
-        className="flex w-full items-center justify-center bg-paper py-4 font-sans text-sm font-semibold tracking-widest text-ink"
+        className="flex min-h-14 w-full items-center justify-center bg-paper py-4 font-sans text-sm font-semibold tracking-widest text-ink"
       >
         {t("bottomNav.book")}
       </Link>

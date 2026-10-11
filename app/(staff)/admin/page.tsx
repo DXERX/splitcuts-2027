@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { StaffShell } from "@/components/staff/StaffShell";
 import { FloorBoard } from "@/components/staff/FloorBoard";
@@ -9,16 +9,10 @@ import { StatusFilterChips } from "@/components/staff/StatusFilterChips";
 import { TodayOffPanel } from "@/components/staff/TimeOffPanel";
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
-import { hydrateAppointments, STATUS_LABEL, STATUS_STYLE, type LiveAppointment } from "@/lib/staff/appointments";
+import { STATUS_LABEL, STATUS_STYLE } from "@/lib/staff/appointments";
+import { loadBranchDashboard, type BannedRow, type RecentAppointment } from "@/lib/staff/dashboardStats";
 import type { AppointmentStatus } from "@/lib/database.types";
-import { formatSlotLabel, slotTime } from "@/lib/timeSlots";
-
-interface BannedRow {
-  key: string;
-  name: string;
-  phone: string;
-  count: number;
-}
+import { formatSlotLabel, shiftDate, slotTime } from "@/lib/timeSlots";
 
 const RECENT_STATUSES: AppointmentStatus[] = [
   "booked",
@@ -29,78 +23,77 @@ const RECENT_STATUSES: AppointmentStatus[] = [
   "no_show",
 ];
 
-function todayMinus(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
 export default function AdminDashboardPage() {
   const shop = useShopSession();
-  const [allRows, setAllRows] = useState<LiveAppointment[]>([]);
-  const [weekRows, setWeekRows] = useState<LiveAppointment[]>([]);
+  const [revenueWeek, setRevenueWeek] = useState(0);
+  const [weekBookings, setWeekBookings] = useState(0);
+  const [banned, setBanned] = useState<BannedRow[]>([]);
+  const [recent, setRecent] = useState<RecentAppointment[]>([]);
   const [recentStatus, setRecentStatus] = useState<AppointmentStatus | "all">("all");
-  // Mirrors the boundary the initial week query used, kept fresh for the
-  // realtime handler below so a push from a few hours into a new day still
-  // gets judged against the right 7-day window.
-  const [weekBoundary, setWeekBoundary] = useState<string>(() => todayMinus(7));
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const statsRequest = useRef(0);
+
+  const loadStats = useCallback(async () => {
+    if (shop.loading) return;
+    const requestId = ++statsRequest.current;
+    const end = shop.businessDate;
+    const start = shiftDate(end, -6);
+    setStatsLoading(true);
+    const result = await loadBranchDashboard(shop.supabase, {
+      branchId: shop.branchId,
+      from: start,
+      to: end,
+      status: recentStatus,
+    });
+    if (requestId !== statsRequest.current) return;
+    setStatsLoading(false);
+    if (result.error || !result.data) {
+      setStatsError(result.error ?? "Could not load dashboard stats.");
+      return;
+    }
+    setStatsError(null);
+    setRevenueWeek(result.data.revenue7d);
+    setWeekBookings(result.data.weekBookings);
+    setBanned(result.data.banned);
+    setRecent(result.data.recent);
+  }, [shop.loading, shop.businessDate, shop.branchId, shop.supabase, recentStatus]);
 
   useEffect(() => {
-    if (shop.loading) return;
-    void (async () => {
-      const weekStr = todayMinus(7);
-      setWeekBoundary(weekStr);
+    void loadStats();
+  }, [loadStats]);
 
-      let query = shop.supabase.from("appointments").select("*").order("appointment_start", { ascending: false }).limit(400);
-      if (shop.branchId) query = query.eq("branch_id", shop.branchId);
-      const { data } = await query;
-      const rows = hydrateAppointments((data ?? []) as LiveAppointment[], shop.barbers, shop.services);
-      setAllRows(rows);
+  const loadStatsRef = useRef(loadStats);
+  useEffect(() => {
+    loadStatsRef.current = loadStats;
+  }, [loadStats]);
 
-      let weekQuery = shop.supabase.from("appointments").select("*").gte("appointment_date", weekStr);
-      if (shop.branchId) weekQuery = weekQuery.eq("branch_id", shop.branchId);
-      const { data: week } = await weekQuery;
-      setWeekRows(hydrateAppointments((week ?? []) as LiveAppointment[], shop.barbers, shop.services));
-    })();
-  }, [shop.loading, shop.branchId, shop.supabase, shop.barbers, shop.services]);
+  const refreshTimer = useRef<number | null>(null);
+  const scheduleStatsRefresh = useCallback(() => {
+    if (refreshTimer.current != null) window.clearTimeout(refreshTimer.current);
+    refreshTimer.current = window.setTimeout(() => {
+      void loadStatsRef.current();
+    }, 400);
+  }, []);
 
-  // The board above (shop.appointments) is already realtime for whichever
-  // day is selected -- this second subscription keeps "recent activity",
-  // "banned", and the 7-day revenue total live too, since those are
-  // independent, non-day-scoped queries that would otherwise only ever
-  // update on a full page reload.
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current != null) window.clearTimeout(refreshTimer.current);
+    };
+  }, []);
+
+  // Today's board already updates through useShopSession. This subscription
+  // only refreshes the 7-day totals, the ban list, and recent activity.
   useBranchChannel({
     branchId: shop.branchId,
-    onNewAppointment: (appointment) => {
-      setAllRows((prev) => {
-        if (prev.some((a) => a.id === appointment.id)) return prev;
-        const hydrated = hydrateAppointments([appointment], shop.barbers, shop.services)[0];
-        if (!hydrated) return prev;
-        return [hydrated, ...prev].slice(0, 400);
-      });
-      if (appointment.appointment_date >= weekBoundary) {
-        setWeekRows((prev) => {
-          if (prev.some((a) => a.id === appointment.id)) return prev;
-          const hydrated = hydrateAppointments([appointment], shop.barbers, shop.services)[0];
-          return hydrated ? [...prev, hydrated] : prev;
-        });
-      }
-    },
-    onAppointmentUpdate: (appointment) => {
-      const hydrated = hydrateAppointments([appointment], shop.barbers, shop.services)[0];
-      if (!hydrated) return;
-      setAllRows((prev) => prev.map((a) => (a.id === appointment.id ? { ...a, ...hydrated } : a)));
-      setWeekRows((prev) => prev.map((a) => (a.id === appointment.id ? { ...a, ...hydrated } : a)));
-    },
+    onNewAppointment: () => scheduleStatsRefresh(),
+    onAppointmentUpdate: () => scheduleStatsRefresh(),
   });
 
   const today = shop.appointments;
   const completedToday = today.filter((a) => a.status === "completed");
   const noShowsToday = today.filter((a) => a.status === "no_show");
   const revenueToday = completedToday.reduce((s, a) => s + Number(a.total_price ?? 0), 0);
-  const revenueWeek = weekRows
-    .filter((a) => a.status === "completed")
-    .reduce((s, a) => s + Number(a.total_price ?? 0), 0);
 
   const byBarber = shop.barbers.map((b) => {
     const rows = today.filter((a) => a.barber_id === b.id && a.status !== "cancelled");
@@ -114,31 +107,13 @@ export default function AdminDashboardPage() {
     };
   });
 
-  const banned: BannedRow[] = useMemo(() => {
-    const map = new Map<string, BannedRow>();
-    for (const a of allRows) {
-      if (a.status !== "no_show") continue;
-      const key = a.customer_id || a.customer_phone || a.id;
-      const current = map.get(key) ?? {
-        key,
-        name: a.customer_name ?? "Guest",
-        phone: a.customer_phone ?? "—",
-        count: 0,
-      };
-      current.count += 1;
-      map.set(key, current);
-    }
-    return [...map.values()].filter((r) => r.count >= 2).sort((a, b) => b.count - a.count);
-  }, [allRows]);
-
-  const recent = allRows.filter((a) => recentStatus === "all" || a.status === recentStatus).slice(0, 12);
   const branchName = shop.branches.map((b) => b.name).join(" · ") || "No branch";
 
   return (
     <StaffShell title={shop.role === "manager" ? "BRANCH" : "OWNER"} meta={branchName}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">
         <StaffDatePicker value={shop.viewDate} today={shop.businessDate} onChange={shop.setViewDate} />
-        {shop.boardLoading && (
+        {(shop.boardLoading || statsLoading) && (
           <span className="font-sans text-[10px] font-semibold tracking-widest text-ink-400">LOADING…</span>
         )}
       </div>
@@ -152,7 +127,7 @@ export default function AdminDashboardPage() {
           [shop.isViewingToday ? "REVENUE TODAY" : "REVENUE (DAY)", `${revenueToday} SAR`],
           ["REVENUE 7D", `${revenueWeek} SAR`],
           ["CHAIRS", shop.barbers.length],
-          ["WEEK BOOKINGS", weekRows.filter((a) => a.status !== "cancelled").length],
+          ["WEEK BOOKINGS", weekBookings],
         ].map(([label, value]) => (
           <div key={String(label)} className="bg-ink-950 px-4 py-5">
             <span className="tag-number text-ink-400">{label}</span>
@@ -161,7 +136,9 @@ export default function AdminDashboardPage() {
         ))}
       </section>
 
-      {shop.error && <p className="px-6 py-3 font-sans text-sm text-red-400">{shop.error}</p>}
+      {(shop.error || statsError) && (
+        <p className="px-6 py-3 font-sans text-sm text-red-400">{shop.error || statsError}</p>
+      )}
 
       <section className="grid gap-6 px-4 py-8 md:px-8 lg:grid-cols-[1fr_320px]">
         <div>

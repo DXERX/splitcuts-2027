@@ -106,6 +106,14 @@ export function todayDateString(): string {
   return dateToString(new Date());
 }
 
+/** Calendar-day shift that stays on the shop's local date, not UTC. */
+export function shiftDate(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+  dt.setDate(dt.getDate() + days);
+  return dateToString(dt);
+}
+
 /** Business day the shop is currently in. Before opening (e.g. 01:20 when
  * the shop opened at 14:00 yesterday) still belongs to yesterday's board. */
 export function businessDateString(hours: BusinessHours = FALLBACK_HOURS, now = new Date()): string {
@@ -120,4 +128,13 @@ export function businessDateString(hours: BusinessHours = FALLBACK_HOURS, now = 
 
 export function slotTime(value: string | null | undefined): string {
   return (value ?? "").slice(0, 5);
+}
+
+/** Wall-clock moment of a business-day slot. Times before opening belong to
+ * the next calendar morning (the shop closes after midnight). */
+export function visitMoment(date: string, time: string, hours: BusinessHours = FALLBACK_HOURS): Date {
+  const [y, mo, d] = date.split("-").map(Number);
+  const [hh, mm] = time.slice(0, 5).split(":").map(Number);
+  const offset = toMinutes(time.slice(0, 5)) < toMinutes(hours.default_start) ? 1 : 0;
+  return new Date(y ?? 1970, (mo ?? 1) - 1, (d ?? 1) + offset, hh ?? 0, mm ?? 0);
 }

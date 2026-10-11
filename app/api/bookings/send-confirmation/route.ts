@@ -21,11 +21,15 @@ const bodySchema = z.object({ appointmentId: z.string().uuid() });
 
 interface AppointmentRow {
   id: string;
+  customer_id?: string | null;
   customer_name: string | null;
   customer_email: string | null;
   appointment_date: string;
   appointment_time: string;
+  appointment_start?: string | null;
   confirmation_email_sent_at: string | null;
+  total_price?: number | null;
+  visit_id?: string | null;
   barbers: { name: string | null; nickname: string | null } | { name: string | null; nickname: string | null }[] | null;
   services: { name_en: string | null; name_ar: string | null } | { name_en: string | null; name_ar: string | null }[] | null;
 }
@@ -34,23 +38,55 @@ function one<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
-const ARABIC_WEEKDAY = new Intl.DateTimeFormat("ar-SA", { weekday: "long" });
-const ARABIC_DAY_MONTH = new Intl.DateTimeFormat("ar-SA", { day: "numeric", month: "long" });
+const RIYADH_DATE = new Intl.DateTimeFormat("ar-SA", {
+  timeZone: "Asia/Riyadh",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+const RIYADH_TIME = new Intl.DateTimeFormat("ar-SA", {
+  timeZone: "Asia/Riyadh",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
-/** "2026-09-27" + "23:30:00" -> "الأحد ٢٧ سبتمبر، الساعة ١١:٣٠ م" */
-function formatArabicDateTime(dateStr: string, timeStr: string): string {
-  const [hStr, mStr] = timeStr.slice(0, 5).split(":");
-  const h = Number(hStr);
-  const m = Number(mStr);
-  const d = new Date(`${dateStr}T00:00:00`);
-  const period = h >= 12 ? "م" : "ص";
-  const h12 = ((h + 11) % 12) + 1;
-  const mm = String(m).padStart(2, "0");
-  return `${ARABIC_WEEKDAY.format(d)} ${ARABIC_DAY_MONTH.format(d)}، الساعة ${h12}:${mm} ${period}`;
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const map: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return map[character] ?? character;
+  });
 }
 
-function confirmationEmailHtml(opts: { customerName: string; whenText: string; barberName: string; serviceName: string }) {
-  const { customerName, whenText, barberName, serviceName } = opts;
+/** A stored name that is actually a phone number should not be the greeting. */
+function greetingName(value: string | null): string {
+  const raw = (value ?? "").trim();
+  if (!raw || /^guest$/i.test(raw) || /^\+?[\d\s()-]{7,}$/.test(raw)) return "";
+  return escapeHtml(raw);
+}
+
+/** Uses the real Riyadh instant, so a 01:30 slot on Saturday's business day
+ * reads as Sunday 1:30, not Saturday 1:30. */
+function formatRiyadhWhen(startIso: string | null, dateStr: string, timeStr: string): string {
+  const instant = startIso
+    ? new Date(startIso)
+    : new Date(`${dateStr}T${timeStr.slice(0, 5)}:00+03:00`);
+  return `${RIYADH_DATE.format(instant)}، الساعة ${RIYADH_TIME.format(instant)}`;
+}
+
+function confirmationEmailHtml(opts: {
+  customerName: string;
+  whenText: string;
+  barberName: string;
+  serviceNames: string[];
+}) {
+  const { customerName, whenText, barberName, serviceNames } = opts;
+  const services = serviceNames.map((name) => escapeHtml(name)).join(" · ");
   return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
   <body style="margin:0; padding:0; background-color:#0F0D0B;">
@@ -75,9 +111,9 @@ function confirmationEmailHtml(opts: { customerName: string; whenText: string; b
             <tr>
               <td align="center" style="padding:20px 32px 0 32px;">
                 <span style="font-family:Arial, Helvetica, sans-serif; font-size:15px; line-height:26px; color:#C9BEB0;">
-                  لا تنسى موعدك <strong style="color:#F3EEE3;">${whenText}</strong> عند الحلاق <strong style="color:#F3EEE3;">${barberName}</strong>
+                  لا تنسى موعدك <strong style="color:#F3EEE3;">${whenText}</strong> عند الحلاق <strong style="color:#F3EEE3;">${escapeHtml(barberName)}</strong>
                   <br />
-                  <span style="font-size:13px; color:#8A7864;">${serviceName}</span>
+                  <span style="font-size:13px; color:#8A7864;">${services}</span>
                 </span>
               </td>
             </tr>
@@ -124,32 +160,62 @@ export async function POST(request: Request) {
   }
 
   const service = createServiceRoleClient();
-  const { data } = await service
+  const columns =
+    "id, customer_id, customer_name, customer_email, appointment_date, appointment_time, appointment_start, confirmation_email_sent_at, total_price, barbers:barbers(name, nickname), services:services(name_en, name_ar)";
+
+  const withVisit = await service
     .from("appointments")
-    .select(
-      "id, customer_name, customer_email, appointment_date, appointment_time, confirmation_email_sent_at, barbers:barbers(name, nickname), services:services(name_en, name_ar)",
-    )
+    .select(`${columns}, visit_id`)
     .eq("id", parsed.data.appointmentId)
     .maybeSingle();
 
-  const appointment = data as AppointmentRow | null;
+  const visitColumnReady = !withVisit.error;
+  const primary = (visitColumnReady ? withVisit.data : null) as AppointmentRow | null;
+  let appointment = primary;
+
+  if (!visitColumnReady) {
+    const fallback = await service.from("appointments").select(columns).eq("id", parsed.data.appointmentId).maybeSingle();
+    appointment = fallback.data as AppointmentRow | null;
+  }
+
   if (!appointment) {
     return NextResponse.json({ sent: false, skipped: "NOT_FOUND" }, { status: 200 });
-  }
-  if (!appointment.customer_email) {
-    return NextResponse.json({ sent: false, skipped: "NO_EMAIL_ON_FILE" }, { status: 200 });
   }
   if (appointment.confirmation_email_sent_at) {
     return NextResponse.json({ sent: false, skipped: "ALREADY_SENT" }, { status: 200 });
   }
 
-  const barber = one(appointment.barbers);
-  const svc = one(appointment.services);
+  let email = appointment.customer_email;
+  if (!email && appointment.customer_id) {
+    const account = await service.auth.admin.getUserById(appointment.customer_id);
+    email = account.data.user?.email ?? null;
+  }
+  if (!email) {
+    return NextResponse.json({ sent: false, skipped: "NO_EMAIL_ON_FILE" }, { status: 200 });
+  }
+
+  let sitting = [appointment];
+  if (visitColumnReady && appointment.visit_id) {
+    const related = await service
+      .from("appointments")
+      .select(`${columns}, visit_id`)
+      .eq("visit_id", appointment.visit_id)
+      .order("appointment_start", { ascending: true });
+    const rows = (related.data ?? []) as AppointmentRow[];
+    if (rows.length > 0) sitting = rows;
+  }
+
+  const lead = sitting[0] ?? appointment;
+  const barber = one(lead.barbers);
+  const serviceNames = sitting.map((row) => {
+    const svc = one(row.services);
+    return svc?.name_ar || svc?.name_en || "خدمة";
+  });
   const html = confirmationEmailHtml({
-    customerName: appointment.customer_name ?? "",
-    whenText: formatArabicDateTime(appointment.appointment_date, appointment.appointment_time),
+    customerName: greetingName(lead.customer_name),
+    whenText: formatRiyadhWhen(lead.appointment_start ?? null, lead.appointment_date, lead.appointment_time),
     barberName: barber?.name || barber?.nickname || "فريق سبلت كتس",
-    serviceName: svc?.name_ar || svc?.name_en || "",
+    serviceNames,
   });
 
   try {
@@ -161,7 +227,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         from: fromEmail,
-        to: appointment.customer_email,
+        to: email,
         subject: "تأكيد حجزك في سبلت كتس",
         html,
       }),
@@ -179,7 +245,10 @@ export async function POST(request: Request) {
   await service
     .from("appointments")
     .update({ confirmation_email_sent_at: new Date().toISOString() })
-    .eq("id", appointment.id);
+    .in(
+      "id",
+      sitting.map((row) => row.id),
+    );
 
   return NextResponse.json({ sent: true });
 }

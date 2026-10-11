@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -22,6 +23,7 @@ export function DateStrip({
   onSelect: (date: string) => void;
   days?: number;
 }) {
+  const { locale } = useLanguage();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -55,7 +57,9 @@ export function DateStrip({
                 isSelected ? "text-ink/60" : "text-ink-400",
               )}
             >
-              {WEEKDAYS[d.getDay()]}
+              {locale === "ar"
+                ? new Intl.DateTimeFormat("ar-SA", { weekday: "short" }).format(d)
+                : WEEKDAYS[d.getDay()]}
             </span>
             <span className="font-display text-2xl">{d.getDate()}</span>
             {isToday && (

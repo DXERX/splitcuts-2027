@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Container } from "@/components/ui/Container";
 import { BookingFlow } from "@/components/booking/BookingFlow";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { Database } from "@/lib/database.types";
 
 type Barber = Database["public"]["Tables"]["barbers"]["Row"];
@@ -21,6 +22,8 @@ export default function BookPage() {
 function BookPageInner() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
+  const [ready, setReady] = useState(false);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [services, setServices] = useState<Service[]>([]);
 
@@ -32,18 +35,23 @@ function BookPageInner() {
       ]);
       setBarbers(barberRows ?? []);
       setServices(serviceRows ?? []);
+      setReady(true);
     })();
   }, [supabase]);
 
   return (
-    <main className="min-h-screen bg-ink pt-[calc(var(--nav-height)+2rem)] pb-24">
+    <main className="min-h-screen bg-ink pt-[calc(var(--nav-height)+1.25rem)] pb-8">
       <Container className="max-w-2xl">
-        <BookingFlow
-          barbers={barbers}
-          services={services}
-          initialServiceId={searchParams.get("service")}
-          initialBarberId={searchParams.get("barber")}
-        />
+        {ready ? (
+          <BookingFlow
+            barbers={barbers}
+            services={services}
+            initialServiceId={searchParams.get("service")}
+            initialBarberId={searchParams.get("barber")}
+          />
+        ) : (
+          <p className="font-sans text-sm text-ink-400">{t("booking.loading")}</p>
+        )}
       </Container>
     </main>
   );

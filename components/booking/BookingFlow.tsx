@@ -10,9 +10,12 @@ import { BookingError } from "@/components/booking/BookingError";
 import { BookingSuccess } from "@/components/book/BookingSuccess";
 import { TimeSlots } from "@/components/book/TimeSlots";
 import { FIRST_AVAILABLE } from "@/components/book/BarberStep";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import type { DictKey } from "@/lib/i18n/dictionaries/en";
+import { categorize, SERVICE_CATEGORIES, type ServiceCategory } from "@/lib/serviceCategories";
 import { isTamaraEligible, tamaraChargeTotal } from "@/lib/payments/tamaraEligibility";
 import { TamaraInstallmentWidget } from "@/components/ui/TamaraInstallmentWidget";
-import { toE164Saudi } from "@/lib/phone";
+import { isValidSaudiPhone, toE164Saudi } from "@/lib/phone";
 import { isValidEmail } from "@/lib/email";
 import {
   FALLBACK_HOURS,
@@ -44,6 +47,8 @@ const BOOKING_ERROR_MESSAGES: Record<string, string> = {
   PACKAGE_SESSIONS_USED_UP: "That package's cuts are already used up.",
   PACKAGE_SERVICE_MISMATCH: "That package doesn't cover this service.",
   BARBER_UNAVAILABLE: "That barber is off that day -- pick another barber or date.",
+  SERVICE_REQUIRED: "Choose a service first.",
+  TOO_MANY_SERVICES: "Four services is the most one sitting can hold.",
 };
 
 interface ActivePackage {
@@ -78,6 +83,7 @@ export function BookingFlow({
   initialBarberId?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useLanguage();
 
   const validInitialService =
     initialServiceId && services.some((s) => s.id === initialServiceId) ? initialServiceId : null;
@@ -107,6 +113,7 @@ export function BookingFlow({
   // excluded from FIRST AVAILABLE and shown as fully unavailable if picked
   // directly. See lib/database.types.ts's hand-added barber_time_off entry.
   const [offBarberIds, setOffBarberIds] = useState<Set<string>>(new Set());
+  const [emailStatus, setEmailStatus] = useState<"sent" | "missing" | "failed" | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -225,6 +232,22 @@ export function BookingFlow({
     () => serviceIds.map((id) => services.find((s) => s.id === id)).filter((s): s is Service => Boolean(s)),
     [serviceIds, services],
   );
+  const servicesByCategory = useMemo(() => {
+    const groups: Partial<Record<ServiceCategory, Service[]>> = {};
+    for (const service of services) {
+      const name = (service.name_en ?? "").trim();
+      const category =
+        (name === "Hair" || name === "Hair + Beard") &&
+        (!service.category || service.category.toUpperCase() === "CUTS")
+          ? "CUTS"
+          : categorize(service);
+      (groups[category] ??= []).push(service);
+    }
+    return groups;
+  }, [services]);
+  function serviceLabel(service: Service): string {
+    return locale === "ar" ? service.name_ar || service.name_en || "" : service.name_en || service.name_ar || "";
+  }
   const totalPrice = selectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0);
   const totalDuration = selectedServices.reduce((sum, s) => sum + (s.duration ?? 30), 0) || 30;
   const tamaraEligible = isTamaraEligible(totalPrice);
@@ -265,21 +288,84 @@ export function BookingFlow({
     return free?.id ?? barbers[0]?.id ?? "";
   }
 
+  function explainBookingError(message: string): string {
+    const code = Object.keys(BOOKING_ERROR_MESSAGES).find((key) => message.includes(key));
+    return (code && BOOKING_ERROR_MESSAGES[code]) || message;
+  }
+
+  async function bookSitting(resolvedBarberId: string, bookingTime: string): Promise<string[]> {
+    const trimmedName = name.trim();
+    const displayName = trimmedName && !/^\+?[\d\s()-]{7,}$/.test(trimmedName) ? trimmedName : "Guest";
+    const details = {
+      p_customer_id: customerId,
+      p_barber_id: resolvedBarberId,
+      p_appointment_date: date,
+      p_customer_name: displayName,
+      p_customer_phone: normalizedPhone || null,
+      p_customer_email: email.trim() || null,
+      p_notes: selectedServices.length > 1 ? "Combined visit" : null,
+      p_customer_package_id: usePackageRedemption && packageEligible ? activePackage!.id : null,
+    };
+
+    const visit = await supabase.rpc("create_visit", {
+      ...details,
+      p_service_ids: selectedServices.map((service) => service.id),
+      p_appointment_time: `${bookingTime}:00`,
+    });
+
+    const missingVisit =
+      visit.error?.code === "PGRST202" ||
+      /could not find the function/i.test(visit.error?.message ?? "") ||
+      /schema cache/i.test(visit.error?.message ?? "");
+
+    if (!visit.error) {
+      return (visit.data ?? []).map((row) => row.id);
+    }
+    if (!missingVisit) {
+      throw new Error(visit.error.message);
+    }
+
+    const createdIds: string[] = [];
+    let cursor = extendedMinutes(bookingTime, hours);
+    try {
+      for (const svc of selectedServices) {
+        const slotStr = toHHMM(cursor);
+        const { data, error } = await supabase.rpc("create_appointment", {
+          ...details,
+          p_service_id: svc.id,
+          p_appointment_time: `${slotStr}:00`,
+        });
+        if (error) throw new Error(error.message);
+        if (data?.id) createdIds.push(data.id);
+        cursor += svc.duration ?? 30;
+      }
+    } catch (error) {
+      if (createdIds.length > 0) {
+        await Promise.all(
+          createdIds.map((id) =>
+            supabase.rpc("update_appointment_status", {
+              p_appointment_id: id,
+              p_new_status: "cancelled",
+              p_reason: "Auto-cancelled: combined booking failed partway",
+            }),
+          ),
+        );
+      }
+      throw error;
+    }
+    return createdIds;
+  }
+
   async function submit(atTime?: string) {
     const bookingTime = atTime ?? time;
     setSubmitError(null);
-    // Signed-in customers already have both on file. A guest has to give
-    // both here -- phone to identify the booking itself, email because
-    // that's what lets this visit be matched to their account (and its
-    // reward points) the moment they sign in, even if that's after this
-    // booking is made.
     if (!customerId) {
-      if (!phone) {
-        setSubmitError("Enter your number to lock it in.");
+      if (!phone || !isValidSaudiPhone(phone)) {
+        setSubmitError(t("booking.phoneRequired"));
         return;
       }
       if (!email || !isValidEmail(email)) {
-        setSubmitError("Enter a valid email so your visit counts toward your rewards.");
+        setSubmitError(t("booking.emailRequired"));
         return;
       }
     }
@@ -296,103 +382,95 @@ export function BookingFlow({
     setTime(bookingTime);
     setStage("submitting");
 
-    // Chain each selected service back-to-back as its own appointment row
-    // (no schema change needed) -- service 2 starts the instant service 1's
-    // duration ends, and so on.
-    const createdIds: string[] = [];
-    let cursor = extendedMinutes(bookingTime, hours);
-    let failureMessage: string | null = null;
-
-    for (const svc of selectedServices) {
-      const slotStr = toHHMM(cursor);
-      const { data, error } = await supabase.rpc("create_appointment", {
-        p_customer_id: customerId,
-        p_barber_id: resolvedBarberId,
-        p_service_id: svc.id,
-        p_appointment_date: date,
-        p_appointment_time: `${slotStr}:00`,
-        // customer_name is NOT NULL on the live appointments table -- name is
-        // an optional field in this flow, so always fall back to something,
-        // never null.
-        p_customer_name: name || phone || "Guest",
-        p_customer_phone: normalizedPhone || null,
-        p_customer_email: email.trim() || null,
-        p_notes: selectedServices.length > 1 ? "Combined booking" : null,
-        p_customer_package_id: usePackageRedemption && packageEligible ? activePackage!.id : null,
-      });
-
-      if (error) {
-        failureMessage = error.message;
-        break;
-      }
-      if (data?.id) createdIds.push(data.id);
-      cursor += svc.duration ?? 30;
-    }
-
-    if (failureMessage) {
-      // Don't leave a half-booked combined slot -- undo whatever chained
-      // appointments already succeeded before this one failed.
-      if (createdIds.length > 0) {
-        await Promise.all(
-          createdIds.map((id) =>
-            supabase.rpc("update_appointment_status", {
-              p_appointment_id: id,
-              p_new_status: "cancelled",
-              p_reason: "Auto-cancelled: combined booking failed partway",
-            }),
-          ),
-        );
-      }
-      if (failureMessage === "SLOT_ALREADY_BOOKED") {
+    let createdIds: string[] = [];
+    try {
+      createdIds = await bookSitting(resolvedBarberId, bookingTime);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "BOOKING_FAILED";
+      if (message.includes("SLOT_ALREADY_BOOKED")) {
         setErrorTime(bookingTime);
         setStage("error");
         return;
       }
-      setSubmitError(BOOKING_ERROR_MESSAGES[failureMessage] ?? failureMessage);
-      setStage("phone");
+      setSubmitError(explainBookingError(message));
+      setStage(customerId ? "when" : "phone");
       return;
     }
 
     setBarberId(resolvedBarberId);
     setBookingId(createdIds[0] ?? crypto.randomUUID());
     setCreatedAppointmentIds(createdIds);
-    setStage("success");
 
-    // Fire-and-forget: the booking itself is already locked in above, so a
-    // slow or failed email must never hold up or fail the success screen.
-    // Only the first leg of a combined booking gets one -- they're
-    // back-to-back on the same visit, so one email covering the start time
-    // and barber is all that's useful here.
     const firstId = createdIds[0];
-    if (firstId) {
-      void fetch("/api/bookings/send-confirmation", {
+    if (!firstId) {
+      setEmailStatus("failed");
+      setStage("success");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch("/api/bookings/send-confirmation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ appointmentId: firstId }),
-      }).catch(() => {});
+        signal: controller.signal,
+      });
+      const body = (await res.json().catch(() => null)) as { sent?: boolean; skipped?: string } | null;
+      if (body?.sent) setEmailStatus("sent");
+      else if (body?.skipped === "NO_EMAIL_ON_FILE") setEmailStatus("missing");
+      else setEmailStatus("failed");
+    } catch {
+      setEmailStatus("failed");
+    } finally {
+      window.clearTimeout(timer);
     }
+    setStage("success");
   }
 
   if (stage === "success" && selectedServices.length > 0) {
     return (
       <BookingSuccess
         summary={{
-          serviceName: selectedServices.map((s) => s.name_en ?? "Service").join(" + "),
+          serviceName: selectedServices.map((service) => serviceLabel(service)).join(" + "),
           barberName: selectedBarber?.name || selectedBarber?.nickname || "Your barber",
           date,
           time,
+          hours,
           bookingId: bookingId ?? "",
           appointmentIds: createdAppointmentIds,
           totalPrice,
           phone: normalizedPhone,
           name,
+          email,
+          emailStatus,
+          durationMinutes: totalDuration,
         }}
       />
     );
   }
 
+  const stepIndex = stage === "service" ? 0 : stage === "barber" ? 1 : stage === "when" ? 2 : 3;
+  const stepLabels = customerId
+    ? [t("booking.service"), t("booking.barber"), t("booking.when")]
+    : [t("booking.service"), t("booking.barber"), t("booking.when"), t("booking.details")];
+
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <div className="mx-auto w-full max-w-2xl pb-28 md:pb-0">
+      <ol className="mb-6 flex gap-2">
+        {stepLabels.map((label, index) => (
+          <li
+            key={label}
+            className={clsx(
+              "min-w-0 flex-1 border-t-2 pt-2 font-sans text-[10px] font-semibold uppercase tracking-widest",
+              index <= stepIndex ? "border-paper text-paper" : "border-ink-800 text-ink-600",
+            )}
+          >
+            {String(index + 1).padStart(2, "0")} {label}
+          </li>
+        ))}
+      </ol>
       {noShowCount >= 2 && (
         <div className="mb-6 border border-red-400 bg-red-500/10 px-5 py-4">
           <p className="font-display text-lg uppercase text-red-400">Banned from online booking</p>
@@ -411,33 +489,53 @@ export function BookingFlow({
       )}
       {/* 01 -- SERVICE(S) -- multi-select */}
       {stage === "service" ? (
-        <FlowStep index="01" label="I WANT">
-          <div className="flex flex-col gap-3">
-            {services.map((s) => {
-              const active = serviceIds.includes(s.id);
+        <FlowStep index="01" label={t("booking.iWant")}>
+          <div className="flex flex-col gap-6">
+            {SERVICE_CATEGORIES.map((category) => {
+              const rows = servicesByCategory[category];
+              if (!rows?.length) return null;
               return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => toggleService(s.id)}
-                  className={clsx(
-                    "flex items-center justify-between gap-4 px-6 py-4 text-left transition-colors duration-300 ease-editorial",
-                    active ? "bg-paper text-ink" : "hairline text-paper hover:border-ink-400",
-                  )}
-                >
-                  <span className="flex items-center gap-3">
-                    <span
-                      className={clsx(
-                        "flex h-5 w-5 shrink-0 items-center justify-center border font-sans text-[10px] font-bold",
-                        active ? "border-ink bg-ink text-paper" : "border-ink-600",
-                      )}
-                    >
-                      {active ? "✓" : ""}
-                    </span>
-                    <span className="font-display text-lg uppercase">{s.name_en}</span>
-                  </span>
-                  <span className="font-sans text-sm font-semibold">{s.price} SAR</span>
-                </button>
+                <div key={category}>
+                  <p className="mb-2 font-sans text-[10px] font-semibold uppercase tracking-widest text-ink-400">
+                    {t(`category.${category}` as DictKey)}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {rows.map((service) => {
+                      const active = serviceIds.includes(service.id);
+                      return (
+                        <button
+                          key={service.id}
+                          type="button"
+                          onClick={() => toggleService(service.id)}
+                          className={clsx(
+                            "flex min-h-14 items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-300 ease-editorial sm:px-6 sm:py-4",
+                            active ? "bg-paper text-ink" : "hairline text-paper hover:border-ink-400",
+                          )}
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <span
+                              className={clsx(
+                                "flex h-5 w-5 shrink-0 items-center justify-center border font-sans text-[10px] font-bold",
+                                active ? "border-ink bg-ink text-paper" : "border-ink-600",
+                              )}
+                            >
+                              {active ? "✓" : ""}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-display text-base uppercase sm:text-lg">
+                                {serviceLabel(service)}
+                              </span>
+                              <span className={clsx("mt-0.5 block font-sans text-[10px] font-semibold tracking-widest", active ? "text-ink/60" : "text-ink-400")}>
+                                {t("booking.min", { minutes: service.duration ?? 30 })}
+                              </span>
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-sans text-sm font-semibold">{service.price} SAR</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -451,20 +549,21 @@ export function BookingFlow({
                     onChange={(e) => setUsePackageRedemption(e.target.checked)}
                   />
                   <span className="font-sans text-sm text-paper">
-                    Use my Student Package ({activePackage.sessionsTotal - activePackage.sessionsUsed} left) — this cut is free
+                    {t("booking.usePackage", { remaining: activePackage.sessionsTotal - activePackage.sessionsUsed })}
                   </span>
                 </label>
               )}
               {tamaraEligible && !(usePackageRedemption && packageEligible) && (
                 <TamaraInstallmentWidget amount={tamaraChargeTotal(totalPrice)} />
               )}
-              <div className="flex items-center justify-between">
-                <span className="font-sans text-sm text-ink-400">
-                  {selectedServices.length} selected ·{" "}
-                  {usePackageRedemption && packageEligible ? "FREE (package)" : `${totalPrice} SAR total`}
+              <div className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-ink-800 bg-ink/95 px-4 pt-3 backdrop-blur md:static md:mt-0 md:border-0 md:bg-transparent md:p-0" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+                <span className="font-sans text-sm text-ink-200">
+                  {t("booking.selected", { count: selectedServices.length })}
+                  {" · "}
+                  {usePackageRedemption && packageEligible ? t("booking.freePackage") : t("booking.total", { price: totalPrice })}
                 </span>
-                <Button variant="primary" size="lg" onClick={() => setStage("barber")}>
-                  CONTINUE →
+                <Button variant="primary" size="lg" className="shrink-0" onClick={() => setStage("barber")}>
+                  {t("booking.continue")}
                 </Button>
               </div>
             </div>
@@ -474,7 +573,7 @@ export function BookingFlow({
         selectedServices.length > 0 && (
           <StepRow
             index="01"
-            label={`${selectedServices.map((s) => s.name_en).join(" + ")} / ${totalPrice} SAR`}
+            label={`${selectedServices.map((service) => serviceLabel(service)).join(" + ")} / ${totalPrice} SAR`}
             onEdit={() => setStage("service")}
           />
         )
@@ -482,10 +581,10 @@ export function BookingFlow({
 
       {/* 02 -- BARBER */}
       {stage === "barber" && (
-        <FlowStep index="02" label="WHO'S CUTTING?">
-          <div className="flex flex-col gap-3">
+        <FlowStep index="02" label={t("booking.whosCutting")}>
+          <div className="flex flex-col gap-2">
             <RadioRow
-              label="FIRST AVAILABLE"
+              label={t("booking.firstAvailable")}
               active={barberId === FIRST_AVAILABLE}
               onClick={() => setBarberId(FIRST_AVAILABLE)}
             />
@@ -499,36 +598,35 @@ export function BookingFlow({
             ))}
           </div>
           <Button variant="primary" size="lg" className="mt-6 w-full sm:w-auto" onClick={() => setStage("when")}>
-            CONTINUE →
+            {t("booking.continue")}
           </Button>
         </FlowStep>
       )}
       {stage !== "service" && stage !== "barber" && (
         <StepRow
           index="02"
-          label={barberId === FIRST_AVAILABLE ? "FIRST AVAILABLE" : selectedBarber?.name || selectedBarber?.nickname || "—"}
+          label={barberId === FIRST_AVAILABLE ? t("booking.firstAvailable") : selectedBarber?.name || selectedBarber?.nickname || "—"}
           onEdit={() => setStage("barber")}
         />
       )}
 
       {/* 03 -- WHEN */}
       {stage === "when" && (
-        <FlowStep index="03" label="WHEN?">
+        <FlowStep index="03" label={t("booking.whenQuestion")}>
           <div className="mb-6">
             <DateQuickPicker selected={date} onSelect={setDate} />
           </div>
           {selectedBarberOffToday ? (
-            <p className="mb-4 font-sans text-xs text-red-400">
-              {selectedBarber?.name || selectedBarber?.nickname || "This barber"} is off this day -- pick another
-              barber or date.
+            <p className="mb-4 font-sans text-sm text-red-400">
+              {t("booking.barberOff", { name: selectedBarber?.name || selectedBarber?.nickname || "" })}
             </p>
           ) : (
-            <p className="mb-4 font-sans text-xs text-ink-400">
-              Every 30 minutes
+            <p className="mb-4 font-sans text-sm text-ink-400">
+              {t("booking.every30")}
+              {" · "}
               {barberId === FIRST_AVAILABLE
-                ? " · first free chair"
-                : ` · ${selectedBarber?.name || selectedBarber?.nickname || "this barber"} only`}
-              . Taken slots stay visible so nothing gets double-booked.
+                ? t("booking.firstFree")
+                : t("booking.onlyBarber", { name: selectedBarber?.name || selectedBarber?.nickname || "" })}
             </p>
           )}
           <TimeSlots
@@ -556,38 +654,43 @@ export function BookingFlow({
 
       {/* 04 -- PHONE + EMAIL (skipped entirely for signed-in customers) */}
       {stage === "phone" && (
-        <FlowStep index="04" label="YOUR DETAILS">
+        <FlowStep index="04" label={t("booking.yourDetails")}>
           <input
             type="tel"
+            inputMode="tel"
+            autoComplete="tel"
             autoFocus
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+966 5X XXX XXXX"
-            className="hairline w-full bg-transparent px-6 py-5 font-display text-2xl tracking-wide text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
+            placeholder={t("booking.phonePlaceholder")}
+            className="hairline w-full bg-transparent px-4 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
           />
           <input
             type="email"
+            inputMode="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email (for your rewards)"
-            className="hairline mt-3 w-full bg-transparent px-6 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
+            placeholder={t("booking.emailPlaceholder")}
+            className="hairline mt-3 w-full bg-transparent px-4 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
           />
           <input
             type="text"
+            autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Name (optional)"
-            className="mt-3 w-full bg-transparent px-1 font-sans text-sm text-paper outline-none placeholder:text-ink-600"
+            placeholder={t("booking.namePlaceholder")}
+            className="hairline mt-3 w-full bg-transparent px-4 py-4 font-sans text-base text-paper outline-none placeholder:text-ink-600 focus:border-ink-400"
           />
           {submitError && <p className="mt-3 font-sans text-sm text-red-400">{submitError}</p>}
-          <Button variant="primary" size="lg" className="mt-6 w-full sm:w-auto" onClick={() => void submit()}>
-            CONFIRM →
+          <Button variant="primary" size="lg" className="mt-6 w-full" onClick={() => void submit()}>
+            {t("booking.confirm")}
           </Button>
         </FlowStep>
       )}
 
       {stage === "submitting" && (
-        <p className="mt-6 font-sans text-sm text-ink-400">Locking it in…</p>
+        <p className="mt-6 font-sans text-sm text-ink-400">{t("booking.locking")}</p>
       )}
 
       {stage === "error" && errorTime && (
@@ -643,7 +746,7 @@ function RadioRow({ label, active, onClick }: { label: string; active: boolean; 
       type="button"
       onClick={onClick}
       className={clsx(
-        "hairline flex items-center gap-3 px-6 py-4 text-left transition-colors duration-300 ease-editorial",
+        "hairline flex min-h-14 w-full items-center gap-3 px-4 py-4 text-left transition-colors duration-300 ease-editorial sm:px-6",
         active ? "border-paper" : "hover:border-ink-400",
       )}
     >

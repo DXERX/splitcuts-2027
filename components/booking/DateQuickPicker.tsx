@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { DateStrip } from "@/components/book/DateStrip";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 function toDateString(d: Date): string {
   const y = d.getFullYear();
@@ -23,6 +24,7 @@ export function DateQuickPicker({
   onSelect: (date: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useLanguage();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -32,9 +34,9 @@ export function DateQuickPicker({
   nextDay.setDate(nextDay.getDate() + 2);
 
   const quickOptions = [
-    { label: "TODAY", value: toDateString(today) },
-    { label: "TOMORROW", value: toDateString(tomorrow) },
-    { label: WEEKDAYS[nextDay.getDay()], value: toDateString(nextDay) },
+    { label: t("booking.today"), value: toDateString(today) },
+    { label: t("booking.tomorrow"), value: toDateString(tomorrow) },
+    { label: WEEKDAYS[nextDay.getDay()] ?? "", value: toDateString(nextDay) },
   ];
 
   if (expanded) {
@@ -42,7 +44,7 @@ export function DateQuickPicker({
   }
 
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
       {quickOptions.map((opt) => {
         const isSelected = selected === opt.value;
         return (
@@ -51,7 +53,7 @@ export function DateQuickPicker({
             type="button"
             onClick={() => onSelect(opt.value)}
             className={clsx(
-              "px-6 py-4 font-sans text-sm font-semibold tracking-widest transition-colors duration-300 ease-editorial",
+              "min-h-12 shrink-0 px-4 py-3 font-sans text-sm font-semibold tracking-widest transition-colors duration-300 ease-editorial sm:px-6",
               isSelected ? "bg-paper text-ink" : "hairline text-paper hover:border-ink-400",
             )}
           >
@@ -62,9 +64,9 @@ export function DateQuickPicker({
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="px-6 py-4 font-sans text-sm font-semibold tracking-widest text-ink-400 hover:text-paper"
+        className="min-h-12 shrink-0 px-4 py-3 font-sans text-sm font-semibold tracking-widest text-ink-400 hover:text-paper"
       >
-        MORE →
+        {t("booking.more")}
       </button>
     </div>
   );

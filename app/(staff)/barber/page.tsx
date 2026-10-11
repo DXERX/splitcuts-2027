@@ -10,6 +10,7 @@ import { mergeLiveAppointment, type LiveAppointment } from "@/lib/staff/appointm
 export default function BarberSchedulePage() {
   const shop = useShopSession();
   const [confirmingNoShow, setConfirmingNoShow] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function advance(appointment: LiveAppointment) {
     const next =
@@ -21,10 +22,15 @@ export default function BarberSchedulePage() {
             ? "completed"
             : null;
     if (!next) return;
-    const { data } = await shop.supabase.rpc("update_appointment_status", {
+    setActionError(null);
+    const { data, error } = await shop.supabase.rpc("update_appointment_status", {
       p_appointment_id: appointment.id,
       p_new_status: next,
     });
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
     if (data) {
       shop.setAppointments((prev) => mergeLiveAppointment(prev, data, shop.barbers, shop.services));
     }
@@ -36,10 +42,15 @@ export default function BarberSchedulePage() {
       return;
     }
     setConfirmingNoShow(null);
-    const { data } = await shop.supabase.rpc("update_appointment_status", {
+    setActionError(null);
+    const { data, error } = await shop.supabase.rpc("update_appointment_status", {
       p_appointment_id: appointment.id,
       p_new_status: "no_show",
     });
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
     if (data) {
       shop.setAppointments((prev) => mergeLiveAppointment(prev, data, shop.barbers, shop.services));
     }
@@ -64,7 +75,9 @@ export default function BarberSchedulePage() {
           </div>
           <div className="flex items-center gap-3">
             <StaffDatePicker value={shop.viewDate} today={shop.businessDate} onChange={shop.setViewDate} />
-            {shop.error && <p className="font-sans text-xs text-red-400">{shop.error}</p>}
+            {(shop.error || actionError) && (
+              <p className="max-w-sm font-sans text-xs text-red-400">{shop.error || actionError}</p>
+            )}
           </div>
         </div>
         <div className="border border-ink-800 bg-ink-950">

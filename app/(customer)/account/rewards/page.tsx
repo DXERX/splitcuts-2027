@@ -14,8 +14,8 @@ export default async function RewardsPage() {
 
   if (!user) redirect("/login");
 
-  const [{ data: progress }, { data: availableRewards }, { data: transactions }] = await Promise.all([
-    supabase.from("customer_loyalty_progress").select("*").eq("customer_id", user.id).maybeSingle(),
+  const [{ data: progressRows }, { data: availableRewards }, { data: transactions }] = await Promise.all([
+    supabase.from("customer_loyalty_progress").select("*").eq("customer_id", user.id),
     supabase
       .from("rewards")
       .select("id, reward_type, status, earned_at, redeemed_at")
@@ -29,10 +29,22 @@ export default async function RewardsPage() {
       .limit(20),
   ]);
 
+  const progress = [...(progressRows ?? [])].sort((a, b) => {
+    const byVisits = (b.visits_progress ?? 0) - (a.visits_progress ?? 0);
+    if (byVisits !== 0) return byVisits;
+    if (a.branch_id == null && b.branch_id != null) return -1;
+    if (b.branch_id == null && a.branch_id != null) return 1;
+    return 0;
+  })[0];
+
   const visitsRequired = progress?.visits_required ?? 5;
-  const visitsProgress = (progress?.visits_progress ?? 0) % visitsRequired;
-  const remaining = visitsRequired - visitsProgress;
+  const rawProgress = progress?.visits_progress ?? 0;
+  const cycleProgress = visitsRequired > 0 ? rawProgress % visitsRequired : 0;
   const hasUnlockedReward = (availableRewards ?? []).some((r) => r.status === "available");
+  const visitsProgress =
+    cycleProgress === 0 && rawProgress > 0 && hasUnlockedReward ? visitsRequired : cycleProgress;
+  const remaining =
+    cycleProgress === 0 && rawProgress > 0 && hasUnlockedReward ? 0 : visitsRequired - cycleProgress;
 
   return (
     <main className="min-h-screen bg-ink pt-[var(--nav-height)] pb-24">

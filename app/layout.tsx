@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Anton, Inter, Cairo } from "next/font/google";
 import "./globals.css";
 import { SiteChrome } from "@/components/nav/SiteChrome";
@@ -37,6 +37,13 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://splitcuts.vercel.ap
 
 const SITE_TITLE = "Split Cuts";
 const SITE_DESCRIPTION = "Cuts. Braids. Twists. Dreads. Built for Jeddah. Book your chair in seconds.";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0F0D0B",
+};
 
 export const metadata: Metadata = {
   title: SITE_TITLE,

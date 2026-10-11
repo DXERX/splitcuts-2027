@@ -4,7 +4,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { ConcretePanel } from "@/components/ui/ConcretePanel";
-import { formatSlotLabel } from "@/lib/timeSlots";
+import { formatSlotLabel, visitMoment, type BusinessHours } from "@/lib/timeSlots";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 import {
   isTamaraEligible,
@@ -29,6 +30,7 @@ interface Summary {
   barberName: string;
   date: string;
   time: string;
+  hours?: BusinessHours;
   bookingId: string;
 
   /**
@@ -41,6 +43,9 @@ interface Summary {
   totalPrice?: number;
   phone?: string;
   name?: string;
+  email?: string;
+  emailStatus?: "sent" | "missing" | "failed" | null;
+  durationMinutes?: number;
 }
 
 /**
@@ -150,7 +155,7 @@ function buildIcs(summary: Summary): string {
     addMinutesToLocalBooking(
       summary.date,
       summary.time,
-      45,
+      summary.durationMinutes ?? 45,
     );
 
   const end = normalizeIcsLocalDateTime(
@@ -280,9 +285,9 @@ export function BookingSuccess({
 }: {
   summary: Summary;
 }) {
-  const dateLabel = new Date(
-    `${summary.date}T00:00:00`,
-  ).toLocaleDateString("en-US", {
+  const { t, locale } = useLanguage();
+  const when = visitMoment(summary.date, summary.time, summary.hours);
+  const dateLabel = when.toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -408,7 +413,7 @@ export function BookingSuccess({
   }
 
   return (
-    <section className="relative flex min-h-[calc(100svh-var(--nav-height))] w-full items-center overflow-hidden bg-ink">
+    <section className="relative flex w-full items-center overflow-hidden bg-ink">
       <ConcretePanel
         className="absolute inset-0 h-full w-full"
         tone="steel"
@@ -422,20 +427,20 @@ export function BookingSuccess({
         variants={staggerChildren(
           0.08,
         )}
-        className="relative z-10 mx-auto w-full max-w-2xl px-6 py-20 text-center md:px-10"
+        className="relative z-10 mx-auto w-full max-w-2xl px-5 py-10 text-center sm:px-6 md:px-10 md:py-16"
       >
         <motion.h1
           variants={fadeUp}
-          className="font-display text-display-lg uppercase text-paper"
+          className="font-display text-display-md uppercase text-paper sm:text-display-lg"
         >
-          LOCKED IN.
+          {t("booking.lockedIn")}
         </motion.h1>
 
         <motion.div
           variants={fadeUp}
           className="mt-10 text-left"
         >
-          <p className="font-display text-3xl uppercase text-paper">
+          <p className="font-display text-2xl uppercase text-paper sm:text-3xl">
             {summary.barberName}
           </p>
 
@@ -452,21 +457,32 @@ export function BookingSuccess({
           </p>
         </motion.div>
 
+        {summary.emailStatus && (
+          <motion.p variants={fadeUp} className="mt-6 font-sans text-sm text-ink-200">
+            {summary.emailStatus === "sent"
+              ? t("booking.emailSent", { email: summary.email || "" })
+              : summary.emailStatus === "missing"
+                ? t("booking.emailMissing")
+                : t("booking.emailFailed")}
+          </motion.p>
+        )}
+
         <motion.div
           variants={fadeUp}
-          className="mt-8 flex flex-wrap justify-center gap-4"
+          className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center"
         >
           <Button
             type="button"
             variant="primary"
             size="lg"
+            className="w-full sm:w-auto"
             onClick={() => {
               downloadCalendar(
                 summary,
               );
             }}
           >
-            ADD TO CALENDAR
+            {t("booking.calendar")}
           </Button>
 
           <LinkButton
@@ -475,8 +491,9 @@ export function BookingSuccess({
             rel="noreferrer"
             variant="secondary"
             size="lg"
+            className="w-full sm:w-auto"
           >
-            DIRECTIONS
+            {t("booking.directions")}
           </LinkButton>
         </motion.div>
 
@@ -508,6 +525,7 @@ export function BookingSuccess({
             <Button
               variant="secondary"
               size="lg"
+              className="w-full sm:w-auto"
               disabled={
                 tamaraLoading
               }
@@ -520,7 +538,7 @@ export function BookingSuccess({
                 : `PAY ${tamaraTotal} SAR WITH TAMARA`}
             </Button>
 
-            <p className="font-sans text-xs text-ink-500">
+            <p className="font-sans text-xs text-ink-400">
               Includes a{" "}
               {
                 TAMARA_PROCESSING_FEE_SAR

@@ -58,6 +58,13 @@ export function useBranchChannel({
   const onNotificationRef =
     useRef(onNotification);
 
+  // useShopSession and the owner/cashier screens each call this hook.
+  // Supabase reuses a channel when the topic matches, so a shared name
+  // makes the second subscribe fail and the first cleanup tear both down.
+  const channelKeyRef = useRef(
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2),
+  );
+
   /**
    * Keep callback refs synchronized with the latest render.
    */
@@ -89,7 +96,7 @@ export function useBranchChannel({
     let channel: RealtimeChannel | null = null;
 
     channel = supabase
-      .channel(`branch:${branchId}`)
+      .channel(`branch:${branchId}:${channelKeyRef.current}`)
       .on(
         "postgres_changes",
         {
@@ -210,6 +217,10 @@ export function useBarberChannel(
   const onChangeRef =
     useRef(onChange);
 
+  const channelKeyRef = useRef(
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2),
+  );
+
   useEffect(() => {
     onChangeRef.current =
       onChange;
@@ -223,7 +234,7 @@ export function useBarberChannel(
     let channel: RealtimeChannel | null = null;
 
     channel = supabase
-      .channel(`barber:${barberId}`)
+      .channel(`barber:${barberId}:${channelKeyRef.current}`)
       .on(
         "postgres_changes",
         {

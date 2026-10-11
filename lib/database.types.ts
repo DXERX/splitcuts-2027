@@ -69,6 +69,7 @@ export type Database = {
           status: AppointmentStatus
           total_price: number | null
           updated_at: string
+          visit_id: string | null
         }
         Insert: {
           appointment_date: string
@@ -90,6 +91,7 @@ export type Database = {
           status?: AppointmentStatus
           total_price?: number | null
           updated_at?: string
+          visit_id?: string | null
         }
         Update: {
           appointment_date?: string
@@ -111,6 +113,7 @@ export type Database = {
           status?: AppointmentStatus
           total_price?: number | null
           updated_at?: string
+          visit_id?: string | null
         }
         Relationships: [
           {
@@ -1404,6 +1407,15 @@ export type Database = {
       }
     }
     Functions: {
+      branch_dashboard_stats: {
+        Args: {
+          p_branch_id: string | null
+          p_from: string
+          p_status?: string | null
+          p_to: string
+        }
+        Returns: Json
+      }
       activate_customer_package: {
         Args: { p_customer_package_id: string }
         Returns: {
@@ -1450,6 +1462,42 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_visit: {
+        Args: {
+          p_appointment_date: string
+          p_appointment_time: string
+          p_barber_id: string
+          p_customer_email?: string | null
+          p_customer_id: string | null
+          p_customer_name?: string | null
+          p_customer_package_id?: string | null
+          p_customer_phone?: string | null
+          p_notes?: string | null
+          p_service_ids: string[]
+        }
+        Returns: {
+          appointment_date: string
+          appointment_end: string | null
+          appointment_start: string | null
+          appointment_time: string
+          barber_id: string
+          branch_id: string
+          confirmation_email_sent_at: string | null
+          created_at: string
+          customer_email: string | null
+          customer_id: string | null
+          customer_name: string
+          customer_package_id: string | null
+          customer_phone: string | null
+          id: string
+          notes: string | null
+          service_id: string | null
+          status: AppointmentStatus
+          total_price: number | null
+          updated_at: string
+          visit_id: string | null
+        }[]
+      }
       create_appointment: {
         // p_customer_id and the optional p_customer_*/p_notes/p_customer_package_id
         // params are all plain Postgres params with no NOT NULL constraint, so
@@ -1491,6 +1539,7 @@ export type Database = {
           status: AppointmentStatus
           total_price: number | null
           updated_at: string
+          visit_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -1581,6 +1630,7 @@ export type Database = {
           status: AppointmentStatus
           total_price: number | null
           updated_at: string
+          visit_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -1623,6 +1673,7 @@ export type Database = {
           status: AppointmentStatus
           total_price: number | null
           updated_at: string
+          visit_id: string | null
         }
         SetofOptions: {
           from: "*"

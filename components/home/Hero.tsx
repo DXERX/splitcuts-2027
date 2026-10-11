@@ -9,7 +9,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 export function Hero() {
   const { t } = useLanguage();
   return (
-    <section className="relative flex h-[100svh] min-h-[640px] w-full items-end overflow-hidden bg-ink">
+    <section className="relative flex min-h-[100svh] w-full items-end overflow-hidden bg-ink">
       <motion.div
         initial={{ opacity: 0, scale: 1.04 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -26,7 +26,7 @@ export function Hero() {
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/50 to-ink/10" />
       </motion.div>
 
-      <div className="relative z-10 flex w-full flex-col gap-10 px-6 pb-14 md:px-10 md:pb-20">
+      <div className="relative z-10 flex w-full flex-col gap-8 px-5 pb-28 md:gap-10 md:px-10 md:pb-20">
         <div className="flex items-center justify-between">
           <motion.span
             initial={{ opacity: 0 }}
