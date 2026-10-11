@@ -41,15 +41,6 @@ function isStatus(value: unknown): value is AppointmentStatus {
   return typeof value === "string" && (STATUSES as string[]).includes(value);
 }
 
-function isMissingFunction(error: { code?: string; message?: string }): boolean {
-  const message = error.message ?? "";
-  return (
-    error.code === "PGRST202" ||
-    /could not find the function/i.test(message) ||
-    /schema cache/i.test(message)
-  );
-}
-
 function readDashboard(value: Json): BranchDashboard | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Record<string, Json | undefined>;
@@ -197,12 +188,7 @@ export async function loadBranchDashboard(
 
   if (!error) {
     const parsed = readDashboard(data);
-    if (!parsed) return { data: null, error: "Dashboard stats came back empty." };
-    return { data: parsed, error: null };
-  }
-
-  if (!isMissingFunction(error)) {
-    return { data: null, error: error.message };
+    if (parsed) return { data: parsed, error: null };
   }
 
   try {
@@ -210,7 +196,7 @@ export async function loadBranchDashboard(
   } catch (fallbackError) {
     return {
       data: null,
-      error: fallbackError instanceof Error ? fallbackError.message : "Could not load dashboard stats.",
+      error: error?.message ?? (fallbackError instanceof Error ? fallbackError.message : "Could not load dashboard stats."),
     };
   }
 }

@@ -34,7 +34,11 @@ export function OfferPanel({
     if (branchId) query = query.eq("branch_id", branchId);
     const { data, error: loadError } = await query;
     if (loadError) {
-      setError(loadError.message);
+      setError(
+        /schema cache|does not exist|could not find/i.test(loadError.message)
+          ? "Offers are not installed yet. Run the offers SQL file (0026) in Supabase, then refresh."
+          : loadError.message,
+      );
       return;
     }
     setOffers(data ?? []);

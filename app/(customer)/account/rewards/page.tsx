@@ -52,7 +52,7 @@ export default async function RewardsPage() {
         <SectionLabel index="—" label="تتبع القصات" />
         <h1 className="mt-4 font-display text-display-md text-paper">قصاتك</h1>
         <p className="mt-3 max-w-xl font-sans text-base text-ink-200">
-          كل قصة شعر أو شعر مع لحية في يوم مختلف تحسب نقطة. خمس نقاط والسادسة علينا.
+          كل قصة شعر أو شعر وذقن في يوم مختلف تحسب نقطة. خمس نقاط والقصة الجاية مجانًا، وبعد ما تاخذها يرجع العد من صفر.
         </p>
 
         <div className="mt-10 hairline p-6 md:p-10">

@@ -14,6 +14,8 @@ type CutRow = {
   service_name: string;
   eligible: boolean;
   point_recorded: boolean;
+  reward_used: boolean;
+  checked: boolean;
   customer_id: string | null;
 };
 
@@ -46,6 +48,8 @@ function readReport(value: Json): { cuts: CutRow[]; signups: SignupRow[] } {
         service_name: String(entry.service_name ?? "Service"),
         eligible: entry.eligible === true,
         point_recorded: entry.point_recorded === true,
+        reward_used: entry.reward_used === true,
+        checked: true,
         customer_id: entry.customer_id == null ? null : String(entry.customer_id),
       }];
     }),
@@ -63,36 +67,144 @@ function readReport(value: Json): { cuts: CutRow[]; signups: SignupRow[] } {
   };
 }
 
+function riyadhDate(offsetDays: number): string {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Riyadh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today);
+  const year = Number(match?.[1] ?? "1970");
+  const month = Number(match?.[2] ?? "1");
+  const day = Number(match?.[3] ?? "1");
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function earnsPoint(service: { name_en: string | null; category: string | null; price: number | null } | null | undefined): boolean {
+  if (!service) return false;
+  const name = (service.name_en ?? "").trim();
+  if (name !== "Hair" && name !== "Hair + Beard") return false;
+  if (service.category === "CUTS") return true;
+  return service.category == null && !(name === "Hair" && Number(service.price ?? 0) >= 90);
+}
+
+function explainError(message: string, role: string | null): string {
+  if (/FORBIDDEN/i.test(message)) {
+    if (role === "owner" || role === "manager") {
+      return "Points are blocked for this login. Run the latest SQL file (0028) in Supabase, then refresh.";
+    }
+    return `Signed in as ${role ?? "customer"}. Points need the owner account.`;
+  }
+  if (/schema cache/i.test(message) || /could not find the function/i.test(message)) {
+    return "The points report is not installed yet. Run the latest SQL file (0028) in Supabase, then refresh.";
+  }
+  return message;
+}
+
 export function RecentLoyalty({
   branchId,
   supabase,
+  role,
+  enabled,
 }: {
   branchId: string | null;
   supabase: Client;
+  role: string | null;
+  enabled: boolean;
 }) {
   const [cuts, setCuts] = useState<CutRow[]>([]);
   const [signups, setSignups] = useState<SignupRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [partial, setPartial] = useState(false);
 
   const load = useCallback(async () => {
     const { data, error: loadError } = await supabase.rpc("recent_loyalty_report", {
       p_branch_id: branchId,
     });
-    if (loadError) {
-      setError(loadError.message);
+    if (!loadError && data) {
+      const report = readReport(data);
+      setError(null);
+      setPartial(false);
+      setCuts(report.cuts);
+      setSignups(report.signups);
       return;
     }
-    const report = readReport(data);
-    setError(null);
-    setCuts(report.cuts);
-    setSignups(report.signups);
-  }, [branchId, supabase]);
+
+    const since = riyadhDate(-14);
+    let bookings = supabase
+      .from("appointments")
+      .select("id, appointment_date, customer_name, customer_phone, customer_id, services(name_en, category, price)")
+      .eq("status", "completed")
+      .gte("appointment_date", since)
+      .order("appointment_date", { ascending: false })
+      .limit(300);
+    if (branchId) bookings = bookings.eq("branch_id", branchId);
+
+    const { data: rows, error: rowsError } = await bookings;
+    if (rowsError) {
+      setError(explainError(loadError?.message ?? rowsError.message, role));
+      return;
+    }
+
+    const ids = (rows ?? []).map((row) => row.id);
+    const { data: ledger, error: ledgerError } = ids.length
+      ? await supabase
+          .from("loyalty_transactions")
+          .select("appointment_id, type")
+          .in("appointment_id", ids)
+          .in("type", ["visit_earned", "reward_redeemed"])
+      : { data: [], error: null };
+    const { data: owner } = await supabase.rpc("is_owner");
+    const canCheck = !ledgerError && (owner === true || (ledger?.length ?? 0) > 0 || ids.length === 0);
+    const saved = new Set((ledger ?? []).filter((row) => row.type === "visit_earned").map((row) => row.appointment_id));
+    const freed = new Set((ledger ?? []).filter((row) => row.type === "reward_redeemed").map((row) => row.appointment_id));
+
+    setPartial(true);
+    setCuts((rows ?? []).map((row) => {
+      const service = Array.isArray(row.services) ? row.services[0] : row.services;
+      return {
+        id: row.id,
+        appointment_date: row.appointment_date,
+        customer_name: row.customer_name ?? "Guest",
+        customer_phone: row.customer_phone,
+        service_name: service?.name_en ?? "Service",
+        eligible: earnsPoint(service),
+        point_recorded: saved.has(row.id),
+        reward_used: freed.has(row.id),
+        checked: canCheck,
+        customer_id: row.customer_id,
+      };
+    }));
+    setSignups([]);
+    setError(canCheck ? null : "Completed cuts are listed. This login cannot read who already has a point. Run SQL file 0028, then refresh.");
+  }, [branchId, role, supabase]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!enabled) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error: fillError } = await supabase.rpc("backfill_recent_loyalty", { p_days: 14 });
+      if (cancelled) return;
+      if (!fillError) {
+        const result = asObject(data);
+        const visits = Number(result?.visits_added ?? 0);
+        const rewards = Number(result?.rewards_added ?? 0);
+        const linked = Number(result?.linked ?? 0);
+        if (visits > 0 || rewards > 0 || linked > 0) {
+          setNote(`Linked ${linked} bookings · added ${visits} points · ${rewards} rewards.`);
+        }
+      }
+      await load();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, load, supabase]);
 
   async function recordMissing() {
     setBusy(true);
@@ -100,7 +212,7 @@ export function RecentLoyalty({
     const { data, error: fillError } = await supabase.rpc("backfill_recent_loyalty", { p_days: 14 });
     setBusy(false);
     if (fillError) {
-      setError(fillError.message);
+      setError(explainError(fillError.message, role));
       return;
     }
     const result = asObject(data);
@@ -110,7 +222,7 @@ export function RecentLoyalty({
     await load();
   }
 
-  const missing = cuts.filter((cut) => cut.eligible && !cut.point_recorded).length;
+  const missing = cuts.filter((cut) => cut.checked && cut.eligible && !cut.point_recorded && !cut.reward_used).length;
 
   return (
     <section className="px-4 pb-8 md:px-8">
@@ -126,9 +238,13 @@ export function RecentLoyalty({
         </button>
       </div>
       <p className="mt-2 font-sans text-xs text-ink-400">
-        {missing === 0
-          ? "Every eligible done cut in this list has a point."
-          : `${missing} eligible done cuts have no point yet.`}
+        Only Hair and Hair + Beard earn a point, once a day. Five points unlock a free cut.
+        That next cut uses the reward and the count goes back to 0.
+        {partial
+          ? ""
+          : missing === 0
+            ? " Every eligible done cut in this list is saved."
+            : ` ${missing} eligible done cuts have no point yet.`}
       </p>
       {note && <p className="mt-2 font-sans text-xs text-paper">{note}</p>}
       {error && <p className="mt-2 font-sans text-xs text-red-400">{error}</p>}
@@ -146,8 +262,16 @@ export function RecentLoyalty({
                 {cut.customer_id ? " · signed in" : " · no account"}
               </p>
             </div>
-            <span className={cut.point_recorded ? "font-sans text-xs font-semibold text-paper" : "font-sans text-xs font-semibold text-red-400"}>
-              {!cut.eligible ? "NOT A CUT POINT" : cut.point_recorded ? "POINT SAVED" : "NO POINT"}
+            <span className={cut.checked && cut.eligible && !cut.point_recorded && !cut.reward_used ? "font-sans text-xs font-semibold text-red-400" : "font-sans text-xs font-semibold text-paper"}>
+              {!cut.eligible
+                ? "NOT A CUT POINT"
+                : !cut.checked
+                  ? "NOT CHECKED"
+                  : cut.reward_used
+                    ? "FREE CUT · RESET"
+                    : cut.point_recorded
+                      ? "POINT SAVED"
+                      : "NO POINT"}
             </span>
           </div>
         ))}
@@ -164,7 +288,9 @@ export function RecentLoyalty({
           </p>
         ))}
         {signups.length === 0 && (
-          <p className="px-4 py-6 text-sm text-ink-400">No new signups with a booking in the last 14 days.</p>
+          <p className="px-4 py-6 text-sm text-ink-400">
+            {partial ? "Signup list opens after SQL file 0028." : "No new signups with a booking in the last 14 days."}
+          </p>
         )}
       </div>
     </section>

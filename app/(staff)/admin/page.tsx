@@ -242,7 +242,12 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      <RecentLoyalty branchId={shop.branchId} supabase={shop.supabase} />
+      <RecentLoyalty
+        branchId={shop.branchId}
+        supabase={shop.supabase}
+        role={shop.role}
+        enabled={!shop.loading}
+      />
 
       <section className="px-4 pb-12 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">

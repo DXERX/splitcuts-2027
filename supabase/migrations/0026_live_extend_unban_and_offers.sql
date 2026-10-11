@@ -590,3 +590,5 @@ end;
 $$;
 
 grant execute on function public.branch_dashboard_stats(uuid, date, date, text) to authenticated;
+
+notify pgrst, 'reload schema';
