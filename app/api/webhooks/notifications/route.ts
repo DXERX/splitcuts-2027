@@ -7,7 +7,16 @@
 // notify_new_appointment trigger (see supabase/migrations). Forwards to the
 // send-notification Edge Function so third-party API calls never touch the
 // browser and never need their secrets here either.
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
+
+function secretMatches(header: string | null, secret: string | undefined): boolean {
+  if (!header || !secret) return false;
+  const left = Buffer.from(header);
+  const right = Buffer.from(secret);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
 
 interface DatabaseWebhookPayload {
   type: "INSERT" | "UPDATE" | "DELETE";
@@ -17,7 +26,7 @@ interface DatabaseWebhookPayload {
 
 export async function POST(request: Request) {
   const secret = request.headers.get("x-webhook-secret");
-  if (secret !== process.env.SUPABASE_WEBHOOK_SECRET) {
+  if (!secretMatches(secret, process.env.SUPABASE_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 

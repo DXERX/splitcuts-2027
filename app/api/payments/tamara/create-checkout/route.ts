@@ -30,6 +30,7 @@ interface AppointmentRow {
   customer_name: string | null;
   customer_phone: string | null;
   service_id: string;
+  total_price: number | null;
   services: { name_en: string | null; price: number | null } | { name_en: string | null; price: number | null }[] | null;
 }
 
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
 
   const { data, error: fetchError } = await service
     .from("appointments")
-    .select("id, customer_id, customer_name, customer_phone, service_id, services:services(name_en, price)")
+    .select("id, customer_id, customer_name, customer_phone, service_id, total_price, services:services(name_en, price)")
     .in("id", appointmentIds);
 
   const appointments = (data ?? []) as AppointmentRow[];
@@ -89,7 +90,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const totalAmount = appointments.reduce((sum, a) => sum + (one(a.services)?.price ?? 0), 0);
+  const lineAmount = (row: AppointmentRow) =>
+    Number(row.total_price ?? one(row.services)?.price ?? 0);
+  const priced = appointments
+    .map((row) => ({ row, amount: lineAmount(row) }))
+    .filter((entry) => entry.amount > 0);
+  const totalAmount = priced.reduce((sum, entry) => sum + entry.amount, 0);
   if (!isTamaraEligible(totalAmount)) {
     return NextResponse.json({ error: "BELOW_TAMARA_MINIMUM" }, { status: 400 });
   }
@@ -148,17 +154,14 @@ export async function POST(request: Request) {
       totalAmount: chargeTotal,
       description: `Split Cuts booking (${appointments.length} service${appointments.length > 1 ? "s" : ""})`,
       items: [
-        ...appointments.map((a) => {
-          const svc = one(a.services);
-          // service_id is nullable on the appointments table -- fall back to
-          // the appointment's own id so Tamara still gets a stable, unique
-          // reference/sku for this line item.
+        ...priced.map(({ row, amount }) => {
+          const svc = one(row.services);
           return {
-            referenceId: a.service_id ?? a.id,
+            referenceId: row.service_id ?? row.id,
             name: svc?.name_en ?? "Service",
-            sku: a.service_id ?? a.id,
+            sku: row.service_id ?? row.id,
             quantity: 1,
-            totalAmount: svc?.price ?? 0,
+            totalAmount: amount,
           };
         }),
         {

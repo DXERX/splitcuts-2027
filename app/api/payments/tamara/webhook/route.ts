@@ -4,8 +4,17 @@
 // Never trust this call's origin -- Tamara echoes back whatever string we
 // registered as the "authorization" header (TAMARA_WEBHOOK_SECRET), so that
 // header is the only thing that proves a call actually came from Tamara.
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+
+function secretMatches(header: string | null, secret: string | undefined): boolean {
+  if (!header || !secret) return false;
+  const left = Buffer.from(header);
+  const right = Buffer.from(secret);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
 
 const STATUS_BY_EVENT: Record<string, string> = {
   order_approved: "approved",
@@ -23,7 +32,7 @@ interface TamaraWebhookPayload {
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
-  if (!process.env.TAMARA_WEBHOOK_SECRET || authHeader !== process.env.TAMARA_WEBHOOK_SECRET) {
+  if (!secretMatches(authHeader, process.env.TAMARA_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 

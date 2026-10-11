@@ -121,33 +121,31 @@ async function ensureCustomer(db: Db, email: string, phone: string | null, name:
     phone_confirm: Boolean(e164),
     user_metadata: { full_name: name ?? undefined },
   });
-  let userId = withPhone.data.user?.id ?? null;
-  if (!userId) {
-    const emailOnly = await db.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      user_metadata: { full_name: name ?? undefined },
-    });
-    userId = emailOnly.data.user?.id ?? null;
+  const createdId = withPhone.data.user?.id ?? null;
+  const emailOnly = createdId
+    ? null
+    : await db.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        user_metadata: { full_name: name ?? undefined },
+      });
+  const newId = createdId ?? emailOnly?.data.user?.id ?? null;
+  if (newId) {
+    await db.from("profiles").update({
+      ...(name ? { full_name: name } : {}),
+      ...(e164 ? { phone: e164 } : {}),
+    }).eq("id", newId);
+    return newId;
   }
-  if (!userId) {
-    for (let page = 1; page <= 10; page += 1) {
-      const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
-      if (error || !data.users.length) break;
-      const found = data.users.find((user) => user.email?.toLowerCase() === email);
-      if (found) {
-        userId = found.id;
-        break;
-      }
-      if (data.users.length < 200) break;
-    }
+
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data.users.length) break;
+    const found = data.users.find((user) => user.email?.toLowerCase() === email);
+    if (found) return found.id;
+    if (data.users.length < 200) break;
   }
-  if (!userId) return null;
-  await db.from("profiles").update({
-    full_name: name,
-    ...(e164 ? { phone: e164 } : {}),
-  }).eq("id", userId);
-  return userId;
+  return null;
 }
 
 async function recordMissingPoints(db: Db) {
@@ -185,8 +183,6 @@ async function recordMissingPoints(db: Db) {
     if (!error) {
       row.customer_id = match;
       linked += 1;
-      const e164 = row.customer_phone && isValidSaudiPhone(row.customer_phone) ? toE164Saudi(row.customer_phone) : null;
-      if (e164) await db.from("profiles").update({ phone: e164 }).eq("id", match).is("phone", null);
     }
   }
 

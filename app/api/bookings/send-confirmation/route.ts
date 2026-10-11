@@ -14,7 +14,7 @@
 // result.
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createServiceRoleClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { SHOP_LOCATION_URL, SHOP_PHONE_DISPLAY, SHOP_EMAIL } from "@/lib/shopInfo";
 
 const bodySchema = z.object({ appointmentId: z.string().uuid() });
@@ -28,6 +28,7 @@ interface AppointmentRow {
   appointment_time: string;
   appointment_start?: string | null;
   confirmation_email_sent_at: string | null;
+  created_at?: string | null;
   total_price?: number | null;
   visit_id?: string | null;
   barbers: { name: string | null; nickname: string | null } | { name: string | null; nickname: string | null }[] | null;
@@ -161,7 +162,7 @@ export async function POST(request: Request) {
 
   const service = createServiceRoleClient();
   const columns =
-    "id, customer_id, customer_name, customer_email, appointment_date, appointment_time, appointment_start, confirmation_email_sent_at, total_price, barbers:barbers(name, nickname), services:services(name_en, name_ar)";
+    "id, customer_id, customer_name, customer_email, appointment_date, appointment_time, appointment_start, confirmation_email_sent_at, created_at, total_price, barbers:barbers(name, nickname), services:services(name_en, name_ar)";
 
   const withVisit = await service
     .from("appointments")
@@ -183,6 +184,28 @@ export async function POST(request: Request) {
   }
   if (appointment.confirmation_email_sent_at) {
     return NextResponse.json({ sent: false, skipped: "ALREADY_SENT" }, { status: 200 });
+  }
+
+  const userClient = await createClient();
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  const createdAt = appointment.created_at ? new Date(appointment.created_at).getTime() : 0;
+  const justBooked = createdAt > 0 && Date.now() - createdAt < 30 * 60 * 1000;
+  let allowed = justBooked || Boolean(user && appointment.customer_id && user.id === appointment.customer_id);
+  if (!allowed && user) {
+    const [{ data: profile }, { data: roles }] = await Promise.all([
+      service.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle(),
+      service.from("staff_roles").select("id").eq("user_id", user.id).eq("is_active", true).limit(1),
+    ]);
+    const role = profile?.role;
+    allowed = Boolean(
+      (profile?.is_active && (role === "owner" || role === "manager" || role === "cashier" || role === "barber")) ||
+        (roles ?? []).length > 0,
+    );
+  }
+  if (!allowed) {
+    return NextResponse.json({ sent: false, skipped: "NOT_ALLOWED" }, { status: 200 });
   }
 
   let email = appointment.customer_email;
