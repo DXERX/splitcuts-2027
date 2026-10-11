@@ -17,6 +17,7 @@ type CutRow = {
   point_recorded: boolean;
   reward_used: boolean;
   checked: boolean;
+  sameDay: boolean;
   customer_id: string | null;
 };
 
@@ -51,6 +52,7 @@ function readReport(value: Json): { cuts: CutRow[]; signups: SignupRow[] } {
         point_recorded: entry.point_recorded === true,
         reward_used: entry.reward_used === true,
         checked: true,
+        sameDay: false,
         customer_id: entry.customer_id == null ? null : String(entry.customer_id),
       }];
     }),
@@ -105,6 +107,7 @@ async function withLedger(cuts: CutRow[]): Promise<{ cuts: CutRow[]; checked: bo
         eligible: flag.eligible,
         point_recorded: flag.pointRecorded,
         reward_used: flag.rewardUsed,
+        sameDay: flag.sameDay === true,
         checked: true,
       };
     }),
@@ -172,7 +175,7 @@ export function RecentLoyalty({
       return;
     }
 
-    const since = riyadhDate(-14);
+    const since = `${riyadhDate(0).slice(0, 7)}-01`;
     let bookings = supabase
       .from("appointments")
       .select("id, appointment_date, customer_name, customer_phone, customer_id, services(name_en, category, price)")
@@ -213,6 +216,7 @@ export function RecentLoyalty({
         point_recorded: saved.has(row.id),
         reward_used: freed.has(row.id),
         checked: canCheck,
+        sameDay: false,
         customer_id: row.customer_id,
       };
     }));
@@ -262,7 +266,7 @@ export function RecentLoyalty({
     await load();
   }
 
-  const missing = cuts.filter((cut) => cut.checked && cut.eligible && !cut.point_recorded && !cut.reward_used).length;
+  const missing = cuts.filter((cut) => cut.checked && cut.eligible && cut.customer_id && !cut.sameDay && !cut.point_recorded && !cut.reward_used).length;
 
   async function findPhone(event: FormEvent) {
     event.preventDefault();
@@ -282,7 +286,7 @@ export function RecentLoyalty({
   return (
     <section className="px-4 pb-8 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-sans text-sm font-semibold text-ink-200">POINTS · LAST 14 DAYS</span>
+        <span className="font-sans text-sm font-semibold text-ink-200">POINTS · THIS MONTH</span>
         <button
           type="button"
           disabled={busy}
@@ -355,7 +359,7 @@ export function RecentLoyalty({
                 {cut.customer_id ? " · signed in" : " · no account"}
               </p>
             </div>
-            <span className={cut.checked && cut.eligible && !cut.point_recorded && !cut.reward_used ? "font-sans text-xs font-semibold text-red-400" : "font-sans text-xs font-semibold text-paper"}>
+            <span className={cut.checked && cut.eligible && cut.customer_id && !cut.sameDay && !cut.point_recorded && !cut.reward_used ? "font-sans text-xs font-semibold text-red-400" : "font-sans text-xs font-semibold text-paper"}>
               {!cut.eligible
                 ? "NOT A CUT POINT"
                 : !cut.checked
@@ -364,7 +368,11 @@ export function RecentLoyalty({
                     ? "FREE CUT · RESET"
                     : cut.point_recorded
                       ? "POINT SAVED"
-                      : "NO POINT"}
+                      : cut.sameDay
+                        ? "COUNTED TODAY"
+                        : cut.customer_id
+                          ? "NO POINT"
+                          : "NO ACCOUNT"}
             </span>
           </div>
         ))}

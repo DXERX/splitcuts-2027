@@ -8,6 +8,7 @@ export type BookingFlag = {
   rewardUsed: boolean;
   tamaraPaid: boolean;
   freeCut: boolean;
+  sameDay: boolean;
 };
 
 export async function fetchBookingFlags(ids: string[]): Promise<Record<string, BookingFlag> | null> {

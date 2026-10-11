@@ -19,8 +19,12 @@ const OPEN = new Set(["booked", "checked_in", "in_service"]);
 const json = (body: object, status = 200) => NextResponse.json(body, { status });
 
 function last9(phone: string | null | undefined): string | null {
-  const digits = (phone ?? "").replace(/\D/g, "");
+  const digits = (phone ?? "").replace(/\D/g, "").replace(/^966/, "").replace(/^0+/, "");
   return digits.length >= 9 ? digits.slice(-9) : null;
+}
+
+function monthStart(): string {
+  return `${riyadhDate(0).slice(0, 7)}-01`;
 }
 
 function one<T>(value: T | T[] | null | undefined): T | null {
@@ -74,8 +78,39 @@ function riyadhDate(offsetDays: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+async function accountIndexes(db: Db): Promise<{ byPhone: Map<string, string[]>; byEmail: Map<string, string> }> {
+  const byPhone = new Map<string, string[]>();
+  const byEmail = new Map<string, string>();
+  const addPhone = (phone: string | null | undefined, id: string) => {
+    const tail = last9(phone);
+    if (!tail) return;
+    const current = byPhone.get(tail) ?? [];
+    if (!current.includes(id)) current.push(id);
+    byPhone.set(tail, current);
+  };
+
+  for (let from = 0; from < 5000; from += 1000) {
+    const { data } = await db.from("profiles").select("id, phone").not("phone", "is", null).range(from, from + 999);
+    for (const profile of data ?? []) addPhone(profile.phone, profile.id);
+    if (!data || data.length < 1000) break;
+  }
+
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data.users.length) break;
+    for (const user of data.users) {
+      addPhone(user.phone, user.id);
+      const email = user.email?.trim().toLowerCase();
+      if (email && !byEmail.has(email)) byEmail.set(email, user.id);
+    }
+    if (data.users.length < 200) break;
+  }
+
+  return { byPhone, byEmail };
+}
+
 async function recordMissingPoints(db: Db) {
-  const since = riyadhDate(-14);
+  const since = monthStart();
   const { data: program } = await db
     .from("loyalty_programs")
     .select("id, visits_required, reward_type")
@@ -85,28 +120,21 @@ async function recordMissingPoints(db: Db) {
     .maybeSingle();
   if (!program) return { linked: 0, visits: 0, rewards: 0 };
 
-  const [{ data: appointments }, { data: profiles }] = await Promise.all([
-    db
-      .from("appointments")
-      .select("id, customer_id, customer_phone, appointment_date, appointment_start, branch_id, created_at, services(name_en, category, price)")
-      .eq("status", "completed")
-      .gte("appointment_date", since),
-    db.from("profiles").select("id, phone").eq("role", "customer").not("phone", "is", null),
-  ]);
-
-  const byPhone = new Map<string, string[]>();
-  for (const profile of profiles ?? []) {
-    const tail = last9(profile.phone);
-    if (!tail) continue;
-    byPhone.set(tail, [...(byPhone.get(tail) ?? []), profile.id]);
-  }
+  const { data: appointments } = await db
+    .from("appointments")
+    .select("id, customer_id, customer_phone, customer_email, appointment_date, appointment_start, branch_id, created_at, services(name_en, category, price)")
+    .eq("status", "completed")
+    .gte("appointment_date", since);
+  const { byPhone, byEmail } = await accountIndexes(db);
 
   let linked = 0;
   const rows = appointments ?? [];
   for (const row of rows) {
     if (row.customer_id) continue;
     const matches = byPhone.get(last9(row.customer_phone) ?? "");
-    const match = matches?.length === 1 ? matches[0] : null;
+    const phoneMatch = matches?.length === 1 ? matches[0] : null;
+    const emailMatch = phoneMatch ? null : byEmail.get(row.customer_email?.trim().toLowerCase() ?? "") ?? null;
+    const match = phoneMatch ?? emailMatch;
     if (!match) continue;
     const { error } = await db.from("appointments").update({ customer_id: match }).eq("id", row.id).is("customer_id", null);
     if (!error) {
@@ -222,7 +250,7 @@ export async function POST(request: NextRequest) {
   const [appointmentsResult, ledgerResult, paymentsResult, rewardsResult] = await Promise.all([
     db
       .from("appointments")
-      .select("id, customer_id, customer_phone, status, services(name_en, category, price)")
+      .select("id, customer_id, customer_phone, status, appointment_date, services(name_en, category, price)")
       .in("id", ids),
     db
       .from("loyalty_transactions")
@@ -263,28 +291,45 @@ export async function POST(request: NextRequest) {
     if (tail) rewardPhones.add(tail);
   }
 
+  const pointCustomers = [...new Set((appointments ?? []).map((row) => row.customer_id).filter((id): id is string => Boolean(id)))];
+  const { data: dayLedger } = pointCustomers.length
+    ? await db
+        .from("loyalty_transactions")
+        .select("customer_id, appointments(appointment_date)")
+        .eq("type", "visit_earned")
+        .in("customer_id", pointCustomers)
+    : { data: [] as { customer_id: string; appointments: { appointment_date: string } | { appointment_date: string }[] | null }[] };
+  const countedDays = new Set<string>();
+  for (const row of dayLedger ?? []) {
+    const date = one(row.appointments)?.appointment_date;
+    if (date) countedDays.add(`${row.customer_id}|${date}`);
+  }
+
   const flags: Record<string, {
     eligible: boolean;
     pointRecorded: boolean;
     rewardUsed: boolean;
     tamaraPaid: boolean;
     freeCut: boolean;
+    sameDay: boolean;
   }> = {};
 
   for (const row of appointments ?? []) {
     const service = one(row.services as ServiceBits | ServiceBits[] | null);
     const eligible = earnsPoint(service);
     const rewardUsed = freed.has(row.id);
+    const pointRecorded = saved.has(row.id);
     const tail = last9(row.customer_phone);
     const owed =
       (row.customer_id != null && rewardCustomers.has(row.customer_id)) ||
       (tail != null && rewardPhones.has(tail));
     flags[row.id] = {
       eligible,
-      pointRecorded: saved.has(row.id),
+      pointRecorded,
       rewardUsed,
       tamaraPaid: paid.has(row.id),
       freeCut: eligible && (rewardUsed || (OPEN.has(row.status) && owed)),
+      sameDay: eligible && !pointRecorded && !rewardUsed && row.customer_id != null && countedDays.has(`${row.customer_id}|${row.appointment_date}`),
     };
   }
 
