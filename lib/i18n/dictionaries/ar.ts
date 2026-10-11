@@ -25,6 +25,7 @@ export const ar: Record<DictKey, string> = {
   "services.tapToBook": "اضغط للحجز",
   "services.empty": "ستظهر القائمة قريبًا.",
   "services.sar": "ر.س",
+  "services.offer": "عرض",
 
   "servicesPage.title": "الخدمات — سبليت كتس",
   "servicesPage.tag": "الخدمات",

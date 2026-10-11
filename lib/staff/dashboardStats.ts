@@ -108,7 +108,7 @@ async function loadFromTables(
     .limit(10000);
   let noShowQuery = supabase
     .from("appointments")
-    .select("id, customer_id, customer_name, customer_phone")
+    .select("id, customer_id, customer_name, customer_phone, created_at")
     .eq("status", "no_show")
     .limit(10000);
   let recentQuery = supabase
@@ -124,13 +124,26 @@ async function loadFromTables(
   }
   if (status !== "all") recentQuery = recentQuery.eq("status", status);
 
-  const [weekRes, noShowRes, recentRes] = await Promise.all([weekQuery, noShowQuery, recentQuery]);
+  const [weekRes, noShowRes, recentRes, pardonRes] = await Promise.all([
+    weekQuery,
+    noShowQuery,
+    recentQuery,
+    supabase.from("booking_pardons").select("phone, customer_id, created_at"),
+  ]);
   const error = weekRes.error ?? noShowRes.error ?? recentRes.error;
   if (error) throw new Error(error.message);
 
   const weekRows = weekRes.data ?? [];
+  const pardons = pardonRes.error ? [] : (pardonRes.data ?? []);
   const bannedMap = new Map<string, BannedRow>();
   for (const row of noShowRes.data ?? []) {
+    const pardoned = pardons.some(
+      (pardon) =>
+        pardon.created_at >= row.created_at &&
+        ((pardon.phone && pardon.phone === row.customer_phone) ||
+          (pardon.customer_id && pardon.customer_id === row.customer_id)),
+    );
+    if (pardoned) continue;
     const key = row.customer_id || row.customer_phone || row.id;
     const current = bannedMap.get(key) ?? {
       key,

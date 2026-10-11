@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { GOOGLE_REVIEW_URL } from "@/lib/shopInfo";
 
 export const runtime = "nodejs";
 
@@ -24,34 +23,17 @@ const escapeHtml = (value: string) =>
   );
 
 export async function POST(req: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const resendKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
 
-  if (!url || !anon || !serviceKey || !resendKey || !from) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !resendKey || !from) {
     return json(
       { error: "SERVER_NOT_CONFIGURED" },
       503,
     );
   }
 
-  /*
-   * Verify that the request comes from an authenticated
-   * staff session.
-   */
-  const jar = cookies();
-
-  const userClient = createServerClient(url, anon, {
-    cookies: {
-      get(name) {
-        return jar.get(name)?.value;
-      },
-      set() {},
-      remove() {},
-    },
-  });
+  const userClient = await createClient();
 
   const {
     data: { user },
@@ -90,12 +72,7 @@ export async function POST(req: NextRequest) {
    * Service-role client is used only after staff
    * authentication has been verified.
    */
-  const db = createClient(url, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  const db = createServiceRoleClient();
 
   /*
    * Only the staff member who actually performed
@@ -125,7 +102,24 @@ export async function POST(req: NextRequest) {
   }
 
   if (!event) {
-    return json({ error: "FORBIDDEN" }, 403);
+    const [{ data: profile }, { data: staffRole }] = await Promise.all([
+      db.from("profiles").select("role, branch_id").eq("id", user.id).maybeSingle(),
+      db
+        .from("staff_roles")
+        .select("branch_id")
+        .eq("user_id", user.id)
+        .eq("is_active", true),
+    ]);
+    const role = profile?.role;
+    const staff =
+      role === "owner" ||
+      role === "manager" ||
+      role === "cashier" ||
+      role === "barber" ||
+      (staffRole ?? []).length > 0;
+    if (!staff) {
+      return json({ error: "FORBIDDEN" }, 403);
+    }
   }
 
   /*
@@ -160,7 +154,12 @@ const { data: appt, error: apptError } =
     });
   }
 
-  if (!appt.customer_email) {
+  let recipient = appt.customer_email;
+  if (!recipient && appt.customer_id) {
+    const account = await db.auth.admin.getUserById(appt.customer_id);
+    recipient = account.data.user?.email ?? null;
+  }
+  if (!recipient) {
     return json({
       sent: false,
       skipped: "NO_EMAIL",
@@ -367,17 +366,11 @@ const { data: appt, error: apptError } =
             throw progressError;
           }
 
-          if (
-            progress &&
-            progress.visits_required > 0
-          ) {
+          const required = progress?.visits_required ?? 0;
+          const rawProgress = progress?.visits_progress ?? 0;
+          if (progress && required > 0) {
             const mod =
-              ((
-                progress.visits_progress %
-                  progress.visits_required
-              ) +
-                progress.visits_required) %
-              progress.visits_required;
+              ((rawProgress % required) + required) % required;
 
             /*
              * When the fifth visit unlocks the reward,
@@ -389,11 +382,7 @@ const { data: appt, error: apptError } =
              * 3/5 -> 2 remaining
              * 4/5 -> 1 remaining
              */
-            remaining =
-              mod === 0
-                ? 0
-                : progress.visits_required -
-                  mod;
+            remaining = mod === 0 ? 0 : required - mod;
           }
         }
       }
@@ -481,8 +470,12 @@ const { data: appt, error: apptError } =
           ${message}
         </p>
 
+        <p style="margin:0 0 20px; font-size:18px;">
+          إذا عجبتك القصة، قيّمنا على قوقل ماب. تقييمك يفرق معنا.
+        </p>
+
         <a
-          href="https://splithairstudio.com"
+          href="${GOOGLE_REVIEW_URL}"
           style="
             display:inline-block;
             padding:14px 22px;
@@ -492,7 +485,7 @@ const { data: appt, error: apptError } =
             font-weight:bold;
           "
         >
-          احجز موعدك القادم
+          قيّمنا على قوقل ماب
         </a>
       </div>
     `;
@@ -510,7 +503,7 @@ const { data: appt, error: apptError } =
         },
         body: JSON.stringify({
           from,
-          to: [appt.customer_email],
+          to: [recipient],
           subject,
           html,
         }),

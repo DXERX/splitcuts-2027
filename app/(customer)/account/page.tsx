@@ -35,6 +35,7 @@ export default async function AccountPage() {
     { data: rewards },
     { data: progressRows },
     { count: noShowCount },
+    { data: strikeData, error: strikeError },
     { data: packages },
     { data: myPackages },
   ] =
@@ -63,6 +64,7 @@ export default async function AccountPage() {
         .select("id", { count: "exact", head: true })
         .eq("customer_id", user.id)
         .eq("status", "no_show"),
+      supabase.rpc("my_no_show_strikes"),
       supabase
         .from("packages")
         .select("id, name_en, name_ar, price, session_count")
@@ -98,7 +100,7 @@ export default async function AccountPage() {
   const visitsCount = completedAppointments?.length ?? 0;
   const rewardsCount = rewards?.length ?? 0;
   const firstName = profile?.full_name?.split(" ")[0] ?? "ضيف";
-  const noShows = noShowCount ?? 0;
+  const noShows = !strikeError && strikeData != null ? Number(strikeData) : (noShowCount ?? 0);
   const isBlocked = noShows >= 2;
 
   // One card per active package, showing this customer's latest request for

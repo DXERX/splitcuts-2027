@@ -6,3 +6,4 @@ export const SHOP_PHONE_DISPLAY = "+966 54 124 8498";
 export const SHOP_PHONE_TEL = "+966541248498";
 export const SHOP_EMAIL = "ceo@splittech.sa";
 export const SHOP_LOCATION_URL = "https://maps.app.goo.gl/D9BVFxAnbdUMMnuC9";
+export const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/i7tVN1uw8ZLwkyGu6";

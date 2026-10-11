@@ -56,6 +56,8 @@ export type Database = {
           appointment_time: string
           barber_id: string
           branch_id: string
+          completion_email_claimed_at: string | null
+          completion_email_sent_at: string | null
           confirmation_email_sent_at: string | null
           created_at: string
           customer_email: string | null
@@ -78,6 +80,8 @@ export type Database = {
           appointment_time: string
           barber_id: string
           branch_id?: string
+          completion_email_claimed_at?: string | null
+          completion_email_sent_at?: string | null
           confirmation_email_sent_at?: string | null
           created_at?: string
           customer_email?: string | null
@@ -100,6 +104,8 @@ export type Database = {
           appointment_time?: string
           barber_id?: string
           branch_id?: string
+          completion_email_claimed_at?: string | null
+          completion_email_sent_at?: string | null
           confirmation_email_sent_at?: string | null
           created_at?: string
           customer_email?: string | null
@@ -1384,6 +1390,66 @@ export type Database = {
           },
         ]
       }
+      booking_pardons: {
+        Row: {
+          created_at: string
+          customer_id: string | null
+          id: string
+          pardoned_by: string | null
+          phone: string | null
+        }
+        Insert: {
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          pardoned_by?: string | null
+          phone?: string | null
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          pardoned_by?: string | null
+          phone?: string | null
+        }
+        Relationships: []
+      }
+      service_offers: {
+        Row: {
+          branch_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          name: string
+          offer_price: number
+          service_id: string
+          updated_at: string
+        }
+        Insert: {
+          branch_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          offer_price: number
+          service_id: string
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          offer_price?: number
+          service_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       customer_loyalty_progress: {
@@ -1415,6 +1481,45 @@ export type Database = {
           p_to: string
         }
         Returns: Json
+      }
+      clear_phone_ban: {
+        Args: {
+          p_customer_id?: string | null
+          p_phone?: string | null
+        }
+        Returns: undefined
+      }
+      apply_service_offer: {
+        Args: {
+          p_name: string
+          p_offer_id?: string | null
+          p_offer_price: number
+          p_service_id: string
+        }
+        Returns: Database["public"]["Tables"]["service_offers"]["Row"]
+      }
+      clear_service_offer: {
+        Args: { p_service_id: string }
+        Returns: undefined
+      }
+      backfill_recent_loyalty: {
+        Args: { p_days?: number }
+        Returns: Json
+      }
+      recent_loyalty_report: {
+        Args: { p_branch_id?: string | null }
+        Returns: Json
+      }
+      my_no_show_strikes: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      no_show_strike_count: {
+        Args: {
+          p_customer_id: string | null
+          p_phone: string | null
+        }
+        Returns: number
       }
       activate_customer_package: {
         Args: { p_customer_package_id: string }
@@ -1482,6 +1587,8 @@ export type Database = {
           appointment_time: string
           barber_id: string
           branch_id: string
+          completion_email_claimed_at: string | null
+          completion_email_sent_at: string | null
           confirmation_email_sent_at: string | null
           created_at: string
           customer_email: string | null
@@ -1526,6 +1633,8 @@ export type Database = {
           appointment_time: string
           barber_id: string
           branch_id: string
+          completion_email_claimed_at: string | null
+          completion_email_sent_at: string | null
           confirmation_email_sent_at: string | null
           created_at: string
           customer_email: string | null
@@ -1617,6 +1726,8 @@ export type Database = {
           appointment_time: string
           barber_id: string
           branch_id: string
+          completion_email_claimed_at: string | null
+          completion_email_sent_at: string | null
           confirmation_email_sent_at: string | null
           created_at: string
           customer_email: string | null
@@ -1660,6 +1771,8 @@ export type Database = {
           appointment_time: string
           barber_id: string
           branch_id: string
+          completion_email_claimed_at: string | null
+          completion_email_sent_at: string | null
           confirmation_email_sent_at: string | null
           created_at: string
           customer_email: string | null

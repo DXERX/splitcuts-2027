@@ -10,6 +10,8 @@ import { TodayOffPanel } from "@/components/staff/TimeOffPanel";
 import { useShopSession } from "@/lib/staff/useShopSession";
 import { useBranchChannel } from "@/lib/realtime/useBookingChannel";
 import { STATUS_LABEL, STATUS_STYLE } from "@/lib/staff/appointments";
+import { OfferPanel } from "@/components/staff/OfferPanel";
+import { RecentLoyalty } from "@/components/staff/RecentLoyalty";
 import { loadBranchDashboard, type BannedRow, type RecentAppointment } from "@/lib/staff/dashboardStats";
 import type { AppointmentStatus } from "@/lib/database.types";
 import { formatSlotLabel, shiftDate, slotTime } from "@/lib/timeSlots";
@@ -31,6 +33,9 @@ export default function AdminDashboardPage() {
   const [recent, setRecent] = useState<RecentAppointment[]>([]);
   const [recentStatus, setRecentStatus] = useState<AppointmentStatus | "all">("all");
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [unbanPhone, setUnbanPhone] = useState("");
+  const [unbanBusy, setUnbanBusy] = useState<string | null>(null);
+  const [unbanError, setUnbanError] = useState<string | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const statsRequest = useRef(0);
 
@@ -109,6 +114,22 @@ export default function AdminDashboardPage() {
 
   const branchName = shop.branches.map((b) => b.name).join(" · ") || "No branch";
 
+  async function unban(phone: string | null, customerId: string | null, busyKey: string) {
+    setUnbanBusy(busyKey);
+    setUnbanError(null);
+    const { error } = await shop.supabase.rpc("clear_phone_ban", {
+      p_phone: phone,
+      p_customer_id: customerId,
+    });
+    setUnbanBusy(null);
+    if (error) {
+      setUnbanError(error.message);
+      return;
+    }
+    setUnbanPhone("");
+    void loadStats();
+  }
+
   return (
     <StaffShell title="OWNER" meta={branchName}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">
@@ -162,17 +183,55 @@ export default function AdminDashboardPage() {
           <div>
             <span className="font-sans text-sm font-semibold text-ink-200">BANNED FROM ONLINE BOOKING</span>
             <div className="mt-3 divide-y divide-ink-800 border border-ink-800">
-              {banned.map((b) => (
-                <div key={b.key} className="px-4 py-3">
-                  <p className="font-sans text-sm text-paper">{b.name}</p>
-                  <p className="mt-1 font-sans text-xs text-red-400">
-                    {b.phone} · {b.count} no-shows · online booking blocked
-                  </p>
-                </div>
-              ))}
+              {banned.map((b) => {
+                const customerId = /^[0-9a-f-]{36}$/i.test(b.key) ? b.key : null;
+                const phone = b.phone !== "—" ? b.phone : null;
+                return (
+                  <div key={b.key} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div>
+                      <p className="font-sans text-sm text-paper">{b.name}</p>
+                      <p className="mt-1 font-sans text-xs text-red-400">
+                        {b.phone} · {b.count} no-shows · online booking blocked
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={unbanBusy === b.key || (!phone && !customerId)}
+                      onClick={() => void unban(phone, customerId, b.key)}
+                      className="shrink-0 border border-paper px-3 py-2 font-sans text-xs font-semibold text-paper disabled:opacity-40"
+                    >
+                      {unbanBusy === b.key ? "UNBANNING…" : "UNBAN"}
+                    </button>
+                  </div>
+                );
+              })}
               {banned.length === 0 && <p className="px-4 py-6 text-sm text-ink-400">Nobody banned.</p>}
             </div>
+            <form
+              className="mt-3 flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void unban(unbanPhone.trim(), null, "manual");
+              }}
+            >
+              <input
+                value={unbanPhone}
+                onChange={(event) => setUnbanPhone(event.target.value)}
+                placeholder="Phone to unban"
+                className="hairline min-w-0 flex-1 bg-transparent px-3 py-2 font-sans text-sm text-paper outline-none placeholder:text-ink-600"
+              />
+              <button
+                type="submit"
+                disabled={unbanBusy === "manual" || !unbanPhone.trim()}
+                className="bg-paper px-4 py-2 font-sans text-xs font-semibold text-ink disabled:opacity-40"
+              >
+                {unbanBusy === "manual" ? "…" : "UNBAN"}
+              </button>
+            </form>
+            {unbanError && <p className="mt-2 font-sans text-xs text-red-400">{unbanError}</p>}
           </div>
+
+          <OfferPanel services={shop.services} branchId={shop.branchId} supabase={shop.supabase} />
 
           <TodayOffPanel
             barbers={shop.barbers}
@@ -182,6 +241,8 @@ export default function AdminDashboardPage() {
           />
         </div>
       </section>
+
+      <RecentLoyalty branchId={shop.branchId} supabase={shop.supabase} />
 
       <section className="px-4 pb-12 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">

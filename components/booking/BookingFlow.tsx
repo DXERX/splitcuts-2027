@@ -11,6 +11,7 @@ import { BookingSuccess } from "@/components/book/BookingSuccess";
 import { TimeSlots } from "@/components/book/TimeSlots";
 import { FIRST_AVAILABLE } from "@/components/book/BarberStep";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { chargedPrice, offerFor, useActiveOffers } from "@/lib/offers";
 import type { DictKey } from "@/lib/i18n/dictionaries/en";
 import { categorize, SERVICE_CATEGORIES, type ServiceCategory } from "@/lib/serviceCategories";
 import { isTamaraEligible, tamaraChargeTotal } from "@/lib/payments/tamaraEligibility";
@@ -139,12 +140,15 @@ export function BookingFlow({
         setName(profile?.full_name ?? "");
         setPhone(profile?.phone ?? "");
 
-        const { count } = await supabase
-          .from("appointments")
-          .select("id", { count: "exact", head: true })
-          .eq("customer_id", user.id)
-          .eq("status", "no_show");
-        setNoShowCount(count ?? 0);
+        const [{ count }, { data: strikes, error: strikeError }] = await Promise.all([
+          supabase
+            .from("appointments")
+            .select("id", { count: "exact", head: true })
+            .eq("customer_id", user.id)
+            .eq("status", "no_show"),
+          supabase.rpc("my_no_show_strikes"),
+        ]);
+        setNoShowCount(!strikeError && strikes != null ? Number(strikes) : (count ?? 0));
 
         // A signed-in customer may hold an active, unexpired package (e.g.
         // the Student Package) -- if so, offer to redeem a session from it
@@ -248,7 +252,11 @@ export function BookingFlow({
   function serviceLabel(service: Service): string {
     return locale === "ar" ? service.name_ar || service.name_en || "" : service.name_en || service.name_ar || "";
   }
-  const totalPrice = selectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0);
+  const offers = useActiveOffers();
+  const totalPrice = selectedServices.reduce(
+    (sum, service) => sum + chargedPrice(service.price, offerFor(offers, service.id)),
+    0,
+  );
   const totalDuration = selectedServices.reduce((sum, s) => sum + (s.duration ?? 30), 0) || 30;
   const tamaraEligible = isTamaraEligible(totalPrice);
   const selectedBarber = barbers.find((b) => b.id === barberId) ?? null;
@@ -530,7 +538,19 @@ export function BookingFlow({
                               </span>
                             </span>
                           </span>
-                          <span className="shrink-0 font-sans text-sm font-semibold">{service.price} SAR</span>
+                          <span className="shrink-0 text-right font-sans text-sm font-semibold">
+                            {(() => {
+                              const offer = offerFor(offers, service.id);
+                              if (!offer) return `${service.price} SAR`;
+                              return (
+                                <>
+                                  <span className="mr-2 text-xs text-ink-400 line-through">{service.price}</span>
+                                  {offer.offer_price} SAR
+                                  <span className="mt-0.5 block text-[10px] font-semibold tracking-widest">{offer.name}</span>
+                                </>
+                              );
+                            })()}
+                          </span>
                         </button>
                       );
                     })}

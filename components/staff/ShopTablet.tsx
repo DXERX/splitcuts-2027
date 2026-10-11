@@ -108,6 +108,27 @@ export function ShopTablet() {
     if (data) {
       shop.setAppointments((prev) => mergeLiveAppointment(prev, data, shop.barbers, shop.services));
     }
+    if (next === "completed") {
+      void fetch("/api/bookings/send-completion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointmentId: appointment.id }),
+      })
+        .then(async (response) => {
+          const body = (await response.json().catch(() => null)) as { sent?: boolean; skipped?: string; error?: string } | null;
+          if (body?.sent) {
+            setActionError(null);
+            return;
+          }
+          if (body?.skipped === "NO_EMAIL") {
+            setActionError("Done. No email on this booking, so the Google review mail was not sent.");
+            return;
+          }
+          if (body?.skipped === "ALREADY_SENT") return;
+          setActionError(body?.error || body?.skipped || "Done. The review email did not send.");
+        })
+        .catch(() => setActionError("Done. The review email did not send."));
+    }
   }
 
   const synced = shop.lastSyncedAt

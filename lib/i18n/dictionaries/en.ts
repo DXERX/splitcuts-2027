@@ -24,6 +24,7 @@ export const en = {
   "services.tapToBook": "TAP TO BOOK",
   "services.empty": "Menu will appear here shortly.",
   "services.sar": "SAR",
+  "services.offer": "OFFER",
 
   "servicesPage.title": "Services — Split Cuts",
   "servicesPage.tag": "SERVICES",

@@ -8,6 +8,7 @@ import { Container } from "@/components/ui/Container";
 import type { Database } from "@/lib/database.types";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { Localized } from "@/components/i18n/T";
+import { offerFor, useActiveOffers } from "@/lib/offers";
 
 type Service = Pick<
   Database["public"]["Tables"]["services"]["Row"],
@@ -31,6 +32,7 @@ export function PriceList({
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const { t } = useLanguage();
+  const offers = useActiveOffers();
 
   return (
     <section id="services" className="hairline-t scroll-mt-[var(--nav-height)] bg-ink py-14 md:py-20">
@@ -91,7 +93,19 @@ export function PriceList({
                     isHovered && "-translate-x-2",
                   )}
                 >
-                  {service.price} {t("services.sar")}
+                  {(() => {
+                    const offer = offerFor(offers, service.id);
+                    if (!offer) return `${service.price} ${t("services.sar")}`;
+                    return (
+                      <span className="text-right">
+                        <span className="mr-2 text-sm text-ink-400 line-through">{service.price}</span>
+                        {offer.offer_price} {t("services.sar")}
+                        <span className="mt-0.5 block text-[10px] font-semibold tracking-widest text-ink-200">
+                          {t("services.offer")} · {offer.name}
+                        </span>
+                      </span>
+                    );
+                  })()}
                 </span>
               </button>
             );

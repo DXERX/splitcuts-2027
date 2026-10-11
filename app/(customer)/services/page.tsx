@@ -11,11 +11,15 @@ export const metadata = { title: "Services — Split Cuts" };
 
 export default async function ServicesPage() {
   const supabase = await createClient();
-  const { data: services } = await supabase
-    .from("services")
-    .select("id, name_en, name_ar, duration, price, is_active, category")
-    .eq("is_active", true)
-    .order("price");
+  const [{ data: services }, { data: offerRows }] = await Promise.all([
+    supabase
+      .from("services")
+      .select("id, name_en, name_ar, duration, price, is_active, category")
+      .eq("is_active", true)
+      .order("price"),
+    supabase.from("service_offers").select("service_id, name, offer_price").eq("is_active", true),
+  ]);
+  const offers = new Map((offerRows ?? []).map((offer) => [offer.service_id, offer]));
 
   const grouped = groupByCategory(services ?? []);
   const categories = SERVICE_CATEGORIES.filter((c) => (grouped[c]?.length ?? 0) > 0);
@@ -76,7 +80,19 @@ export default async function ServicesPage() {
                           </div>
                           <div className="mt-6 flex items-center justify-between">
                             <span className="font-sans text-lg font-semibold text-paper">
-                              {service.price} <T k="services.sar" />
+                              {offers.get(service.id) ? (
+                                <>
+                                  <span className="mr-2 text-sm text-ink-400 line-through">{service.price}</span>
+                                  {offers.get(service.id)?.offer_price} <T k="services.sar" />
+                                  <span className="mt-1 block font-sans text-[10px] tracking-widest text-ink-200">
+                                    <T k="services.offer" /> · {offers.get(service.id)?.name}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  {service.price} <T k="services.sar" />
+                                </>
+                              )}
                             </span>
                             <LinkButton href={`/book?service=${service.id}`} variant="secondary" size="md">
                               <T k="servicesPage.book" />
