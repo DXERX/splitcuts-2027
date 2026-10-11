@@ -321,7 +321,7 @@ export function RecentLoyalty({
           <p className="mt-1 font-sans text-sm text-ink-200">
             {hit.hasAccount
               ? `${hit.cycle} / ${hit.required} points${hit.freeCutReady ? " · FREE CUT READY" : ""}`
-              : "No account on this number, so no points can be saved."}
+              : "This booking email is not on an account yet."}
           </p>
           {hit.cuts.length > 0 && (
             <div className="mt-2 space-y-1">
@@ -356,7 +356,7 @@ export function RecentLoyalty({
               <p className="mt-1 font-sans text-xs text-ink-400">
                 {cut.appointment_date}
                 {cut.customer_phone ? ` · ${cut.customer_phone}` : ""}
-                {cut.customer_id ? " · signed in" : " · no account"}
+                {cut.customer_id ? " · signed in" : ""}
               </p>
             </div>
             <span className={cut.checked && cut.eligible && cut.customer_id && !cut.sameDay && !cut.point_recorded && !cut.reward_used ? "font-sans text-xs font-semibold text-red-400" : "font-sans text-xs font-semibold text-paper"}>
@@ -370,9 +370,7 @@ export function RecentLoyalty({
                       ? "POINT SAVED"
                       : cut.sameDay
                         ? "COUNTED TODAY"
-                        : cut.customer_id
-                          ? "NO POINT"
-                          : "NO ACCOUNT"}
+                        : "NO POINT"}
             </span>
           </div>
         ))}

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { isValidEmail } from "@/lib/email";
+import { isValidSaudiPhone, toE164Saudi } from "@/lib/phone";
 
 export const runtime = "nodejs";
 
@@ -109,6 +111,45 @@ async function accountIndexes(db: Db): Promise<{ byPhone: Map<string, string[]>;
   return { byPhone, byEmail };
 }
 
+async function ensureCustomer(db: Db, email: string, phone: string | null, name: string | null): Promise<string | null> {
+  if (!isValidEmail(email)) return null;
+  const e164 = phone && isValidSaudiPhone(phone) ? toE164Saudi(phone) : undefined;
+  const withPhone = await db.auth.admin.createUser({
+    email,
+    phone: e164,
+    email_confirm: true,
+    phone_confirm: Boolean(e164),
+    user_metadata: { full_name: name ?? undefined },
+  });
+  let userId = withPhone.data.user?.id ?? null;
+  if (!userId) {
+    const emailOnly = await db.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: { full_name: name ?? undefined },
+    });
+    userId = emailOnly.data.user?.id ?? null;
+  }
+  if (!userId) {
+    for (let page = 1; page <= 10; page += 1) {
+      const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
+      if (error || !data.users.length) break;
+      const found = data.users.find((user) => user.email?.toLowerCase() === email);
+      if (found) {
+        userId = found.id;
+        break;
+      }
+      if (data.users.length < 200) break;
+    }
+  }
+  if (!userId) return null;
+  await db.from("profiles").update({
+    full_name: name,
+    ...(e164 ? { phone: e164 } : {}),
+  }).eq("id", userId);
+  return userId;
+}
+
 async function recordMissingPoints(db: Db) {
   const since = monthStart();
   const { data: program } = await db
@@ -122,7 +163,7 @@ async function recordMissingPoints(db: Db) {
 
   const { data: appointments } = await db
     .from("appointments")
-    .select("id, customer_id, customer_phone, customer_email, appointment_date, appointment_start, branch_id, created_at, services(name_en, category, price)")
+    .select("id, customer_id, customer_name, customer_phone, customer_email, appointment_date, appointment_start, branch_id, created_at, services(name_en, category, price)")
     .eq("status", "completed")
     .gte("appointment_date", since);
   const { byPhone, byEmail } = await accountIndexes(db);
@@ -133,13 +174,19 @@ async function recordMissingPoints(db: Db) {
     if (row.customer_id) continue;
     const matches = byPhone.get(last9(row.customer_phone) ?? "");
     const phoneMatch = matches?.length === 1 ? matches[0] : null;
-    const emailMatch = phoneMatch ? null : byEmail.get(row.customer_email?.trim().toLowerCase() ?? "") ?? null;
-    const match = phoneMatch ?? emailMatch;
+    const emailKey = row.customer_email?.trim().toLowerCase() ?? "";
+    let match = phoneMatch ?? (emailKey ? byEmail.get(emailKey) ?? null : null);
+    if (!match && emailKey) {
+      match = await ensureCustomer(db, emailKey, row.customer_phone, row.customer_name);
+      if (match) byEmail.set(emailKey, match);
+    }
     if (!match) continue;
     const { error } = await db.from("appointments").update({ customer_id: match }).eq("id", row.id).is("customer_id", null);
     if (!error) {
       row.customer_id = match;
       linked += 1;
+      const e164 = row.customer_phone && isValidSaudiPhone(row.customer_phone) ? toE164Saudi(row.customer_phone) : null;
+      if (e164) await db.from("profiles").update({ phone: e164 }).eq("id", match).is("phone", null);
     }
   }
 
@@ -344,11 +391,25 @@ export async function GET(request: NextRequest) {
   if (!digits) return json({ error: "PHONE_REQUIRED" }, 400);
 
   const db = gate.db;
+  await recordMissingPoints(db);
   const [{ data: profiles }, { data: program }] = await Promise.all([
     db.from("profiles").select("id, full_name, phone, role").ilike("phone", `%${digits}`).limit(8),
     db.from("loyalty_programs").select("visits_required").eq("is_active", true).order("created_at").limit(1).maybeSingle(),
   ]);
-  const customers = (profiles ?? []).filter((profile) => profile.role === "customer");
+  let customers = (profiles ?? []).filter((profile) => profile.role === "customer");
+  if (!customers.length) {
+    const { data: linkedRows } = await db
+      .from("appointments")
+      .select("customer_id")
+      .ilike("customer_phone", `%${digits}`)
+      .not("customer_id", "is", null)
+      .limit(20);
+    const linkedIds = [...new Set((linkedRows ?? []).map((row) => row.customer_id).filter((id): id is string => Boolean(id)))];
+    if (linkedIds.length) {
+      const { data: linkedProfiles } = await db.from("profiles").select("id, full_name, phone, role").in("id", linkedIds);
+      customers = linkedProfiles ?? [];
+    }
+  }
   const required = program?.visits_required ?? 5;
   const ids = customers.map((profile) => profile.id);
 
